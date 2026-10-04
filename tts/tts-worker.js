@@ -179,7 +179,7 @@ async function createSession(voiceId, wasmPaths, requestId, generation) {
     progress: progress => postProgress(progress, requestId, generation),
     wasmPaths,
     allowLocalModels: true,
-    fallbackStrategy: "cdn"
+    fallbackStrategy: "local"
   });
 
   activeVoice = voiceId;

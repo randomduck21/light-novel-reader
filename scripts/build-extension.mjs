@@ -1,5 +1,5 @@
 import { build } from "esbuild";
-import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, rm } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { dirname, join, resolve } from "node:path";
@@ -28,6 +28,7 @@ async function download(url, destination) {
 }
 
 await rm(dist, { recursive: true, force: true });
+await rm(join(root, "light-novel-reader.xpi"), { force: true });
 await mkdir(dist, { recursive: true });
 
 for (const path of [
@@ -85,12 +86,12 @@ await download(
   join(dist, "vendor/piper_phonemize.data")
 );
 
-const xpi = join(dist, "light-novel-reader.xpi");
 execFileSync("powershell", [
   "-NoProfile",
   "-NonInteractive",
   "-Command",
-  "Compress-Archive -Path '" + dist.replace(/'/g, "''") + "\*' -DestinationPath '" + xpi.replace(/'/g, "''") + "' -Force"
+  "Compress-Archive -Path '" + dist.replace(/'/g, "''") + "\*' -DestinationPath '" +
+    join(root, "light-novel-reader.xpi").replace(/'/g, "''") + "' -Force"
 ], { stdio: "inherit" });
 
-console.log("Built " + xpi);
+console.log("Built " + join(root, "light-novel-reader.xpi"));

@@ -77,6 +77,11 @@ function requestSynthesis(index) {
     requestId,
     generation,
     voiceId: settings.voiceId,
+    wasmPaths: {
+      onnxWasm: browser.runtime.getURL("vendor/ort/"),
+      piperData: browser.runtime.getURL("vendor/piper_phonemize.data"),
+      piperWasm: browser.runtime.getURL("vendor/piper_phonemize.wasm")
+    },
     text: chunks[index]
   });
 }

@@ -1,9 +1,10 @@
 import { build } from "esbuild";
-import { cp, mkdir, rm } from "node:fs/promises";
+import { cp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
 import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"..");
@@ -12,6 +13,39 @@ const dist=join(root,"dist"),xpi=join(root,"light-novel-reader.xpi");
 async function copy(from,to){try{await mkdir(dirname(to),{recursive:true});await cp(from,to,{recursive:true});return true}catch{return false}}
 async function download(url,to){await mkdir(dirname(to),{recursive:true});const r=await fetch(url);if(!r.ok||!r.body)throw new Error("Download failed: "+url);await pipeline(r.body,createWriteStream(to));}
 const shim={name:"node-fallback-shim",setup(b){b.onResolve({filter:/^(fs|path)$/},a=>({path:a.path,namespace:"shim"}));b.onLoad({filter:/.*/,namespace:"shim"},()=>({contents:"module.exports={};",loader:"js"}));}};
+
+async function patchPiperCompatibility() {
+  const require = createRequire(import.meta.url);
+  const packageEntry = require.resolve("@realtimex/piper-tts-web");
+  let source = await readFile(packageEntry, "utf8");
+
+  if (!/const phonemeIds\\s*=\\s*await new Promise/.test(source)) {
+    throw new Error("Could not locate Piper phoneme ID generation code in " + packageEntry);
+  }
+
+  source = source.replace(
+    /const phonemeIds\\s*=\\s*await new Promise/,
+    "let phonemeIds = await new Promise"
+  );
+
+  const speakerNeedle = /const speakerId\\s*=\\s*0\\s*;/;
+  if (!speakerNeedle.test(source)) {
+    throw new Error("Could not locate Piper speaker ID block in " + packageEntry);
+  }
+
+  source = source.replace(
+    speakerNeedle,
+    'const maxSymbols = Number(this.#modelConfig?.num_symbols || 256);\\n' +
+    '    if (Number.isFinite(maxSymbols) && maxSymbols > 0 && maxSymbols < 256) {\\n' +
+    '      phonemeIds = phonemeIds.filter(id => Number(id) >= 0 && Number(id) < maxSymbols);\\n' +
+    '    }\\n\\n' +
+    '    const speakerId = 0;'
+  );
+
+  await writeFile(packageEntry, source);
+}
+
+await patchPiperCompatibility();
 await rm(dist,{recursive:true,force:true});await rm(xpi,{force:true});await mkdir(dist,{recursive:true});
 
 for(const p of ["manifest.json","popup/popup.html","popup/popup.css","player/player.html","player/player.css","settings/settings.html","settings/settings.css","test/test.html","tts/voices.js"])

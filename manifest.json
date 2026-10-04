@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "Light Novel Reader",
+  "version": "0.1.0",
+  "description": "Extracts readable chapter text from web pages and prepares it for smooth text-to-speech playback.",
+  "permissions": ["storage", "activeTab", "scripting"],
+  "host_permissions": ["<all_urls>"],
+  "action": {
+    "default_title": "Light Novel Reader",
+    "default_popup": "popup/popup.html"
+  },
+  "background": {
+    "service_worker": "background/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content/content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "light-novel-reader@randomduck21"
+    }
+  }
+}

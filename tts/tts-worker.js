@@ -1,4 +1,4 @@
-import { TtsSession } from "@mintplex-labs/piper-tts-web";
+import { TtsSession } from "@realtimex/piper-tts-web";
 
 let session = null;
 let activeVoice = null;
@@ -19,7 +19,9 @@ async function createSession(voiceId, wasmPaths, postProgress) {
         total: event.total
       });
     },
-    wasmPaths
+    wasmPaths,
+    allowLocalModels: true,
+    fallbackStrategy: "local"
   });
 
   return session;

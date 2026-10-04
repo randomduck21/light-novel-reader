@@ -22,7 +22,7 @@ async function patchPiperCompatibility() {
   }
 
   source = source.replace(
-    /const phonemeIds\\s*=\\s*await new Promise/,
+    /const phonemeIds\s*=\s*await new Promise/,
     "let phonemeIds = await new Promise"
   );
 

@@ -2,12 +2,29 @@ import { TtsSession } from "@realtimex/piper-tts-web";
 
 let session = null;
 let activeVoice = null;
+const TTS_CACHE_VERSION = "0.3.2";
+
+async function resetTtsCacheOnce() {
+  const stored = await browser.storage.local.get("ttsCacheVersion");
+  if (stored.ttsCacheVersion === TTS_CACHE_VERSION) return;
+
+  try {
+    const root = await navigator.storage.getDirectory();
+    await root.removeEntry("piper", { recursive: true });
+  } catch {
+    // The cache may not exist yet or OPFS may be unavailable.
+  }
+
+  await browser.storage.local.set({ ttsCacheVersion: TTS_CACHE_VERSION });
+}
 
 async function createSession(voiceId, wasmPaths, postProgress) {
   if (session && activeVoice === voiceId) return session;
 
   session = null;
   activeVoice = voiceId;
+
+  await resetTtsCacheOnce();
 
   session = await TtsSession.create({
     voiceId,

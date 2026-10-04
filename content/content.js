@@ -8,33 +8,22 @@
     "[role='contentinfo']",".comments",".comment",".comments-area",".sidebar",
     ".advertisement",".ads",".ad",".social",".share"
   ];
+
   const DEFAULTS = { voiceId:"en_US-lessac-medium", speed:1, prebufferChunks:3 };
-  const voices = globalThis.LNR_VOICES || ["en_US-lessac-medium","en_GB-alan-low","en_GB-alan-medium"];
-  const voiceLabel = globalThis.LNR_VOICE_LABEL || (x => x);
+  const voices = globalThis.LNR_VOICES || ["en_US-lessac-medium"];
+  const voiceLabel = globalThis.LNR_VOICE_LABEL || (id => id);
 
-  let host=null, shadow=null, highlightLayer=null;
-  let chunks=[], ranges=[], decoded=new Map(), pending=new Map(), sources=new Set();
-  let playing=false, paused=false, generation=0, nextSynthesis=0, nextSchedule=0;
-  let finished=0, nextStartTime=0, audioContext=null, root=null, raf=0;
+  let host=null, shadow=null, root=null;
+  let chunks=[], ranges=[], decoded=new Map(), pending=new Map(), scheduled=new Map();
+  let audioContext=null;
+  let playing=false, paused=false;
+  let generation=0, nextSynthesis=0, nextSchedule=0, finished=0;
+  let nextStartTime=0, activeIndex=-1, waitingHighlight=-1;
   let settings={...DEFAULTS};
+  let styleNode=null;
 
-  const clean = s => (s||"").replace(/\s+/g," ").trim();
-  const chunk = s => s.split(/(?<=[.!?])\s+/).map(x=>x.trim()).filter(Boolean);
-
-  function bestRoot(){
-    const candidates=[
-      document.querySelector("article"),
-      document.querySelector("[role='main']"),
-      document.querySelector("main"),
-      document.querySelector(".chapter"),
-      document.querySelector(".chapter-content"),
-      document.querySelector(".entry-content"),
-      document.querySelector(".post-content"),
-      document.querySelector(".reading-content"),
-      document.body
-    ].filter(Boolean);
-    return candidates.sort((a,b)=>score(b)-score(a))[0]||null;
-  }
+  const clean = s => (s || "").replace(/\s+/g," ").trim();
+  const chunkText = s => s.split(/(?<=[.!?])\s+/).map(x=>x.trim()).filter(Boolean);
 
   function score(el){
     const text=clean(el.innerText||"");
@@ -45,13 +34,29 @@
     return text.length+p*250+s*25-links*100;
   }
 
-  function noisy(el, boundary){
-    return el instanceof Element && NOISE.some(sel=>{
+  function bestRoot(){
+    return [
+      document.querySelector("article"),
+      document.querySelector("[role='main']"),
+      document.querySelector("main"),
+      document.querySelector(".chapter"),
+      document.querySelector(".chapter-content"),
+      document.querySelector(".entry-content"),
+      document.querySelector(".post-content"),
+      document.querySelector(".reading-content"),
+      document.body
+    ].filter(Boolean).sort((a,b)=>score(b)-score(a))[0] || null;
+  }
+
+  function noisy(el,boundary){
+    if(!(el instanceof Element)) return false;
+    for(const sel of NOISE){
       try{
         const nearest=el.closest(sel);
-        return !!nearest && nearest!==boundary;
-      }catch{return false}
-    });
+        if(nearest && nearest!==boundary) return true;
+      }catch{}
+    }
+    return false;
   }
 
   function extract(){
@@ -62,7 +67,7 @@
     const ps=[...clone.querySelectorAll("p")].map(p=>clean(p.innerText)).filter(x=>x.length>=2);
     let text=ps.join("\n\n");
     if(text.length<300) text=clean(clone.innerText||"");
-    return {title:document.title.trim(),text,chunks:chunk(text)};
+    return {title:document.title.trim(),text,chunks:chunkText(text)};
   }
 
   function indexFor(container){
@@ -71,10 +76,10 @@
     while(walker.nextNode()){
       const n=walker.currentNode;
       if(!n.nodeValue) continue;
-      const p=n.parentElement;
-      if(p && noisy(p,container)) continue;
-      const start=raw.length; raw+=n.nodeValue; nodes.push({n,start,end:raw.length});
+      if(n.parentElement && noisy(n.parentElement,container)) continue;
+      const start=raw.length; raw+=n.nodeValue; nodes.push({node:n,start,end:raw.length});
     }
+
     let normalized="", spans=[];
     for(let i=0;i<raw.length;){
       if(/\s/.test(raw[i])){
@@ -85,26 +90,29 @@
     }
     while(normalized.startsWith(" ")){normalized=normalized.slice(1);spans.shift();}
     while(normalized.endsWith(" ")){normalized=normalized.slice(0,-1);spans.pop();}
-    const locate=offset=>{
-      if(!nodes.length) return null;
+
+    function locate(offset){
       const x=Math.max(0,Math.min(raw.length,offset));
       for(const item of nodes){
-        if(x>=item.start&&x<=item.end) return {node:item.n,offset:Math.min(item.n.nodeValue.length,x-item.start)};
+        if(x>=item.start&&x<=item.end)
+          return {node:item.node,offset:Math.min(item.node.nodeValue.length,x-item.start)};
       }
-      const last=nodes[nodes.length-1]; return {node:last.n,offset:last.n.nodeValue.length};
-    };
+      const last=nodes[nodes.length-1];
+      return last ? {node:last.node,offset:last.node.nodeValue.length} : null;
+    }
     return {normalized,spans,locate};
   }
 
   function buildRanges(r){
-    const outChunks=[], outRanges=[];
+    const outChunks=[],outRanges=[];
     const ps=[...r.querySelectorAll("p")].filter(p=>!noisy(p,r));
     const containers=ps.length?ps:[r];
+
     for(const p of containers){
       const idx=indexFor(p);
       if(!idx.normalized) continue;
       let cursor=0;
-      for(const text of chunk(idx.normalized)){
+      for(const text of chunkText(idx.normalized)){
         const start=idx.normalized.indexOf(text,cursor);
         if(start<0) continue;
         const end=start+text.length; cursor=end;
@@ -112,7 +120,12 @@
         const s=idx.locate(a), e=idx.locate(b);
         if(a==null||b==null||!s||!e) continue;
         const range=document.createRange();
-        try{range.setStart(s.node,s.offset);range.setEnd(e.node,e.offset);outChunks.push(text);outRanges.push(range);}catch{}
+        try{
+          range.setStart(s.node,s.offset);
+          range.setEnd(e.node,e.offset);
+          outChunks.push(text);
+          outRanges.push(range);
+        }catch{}
       }
     }
     return {chunks:outChunks,ranges:outRanges};
@@ -124,42 +137,169 @@
     if(!voices.includes(settings.voiceId)) settings.voiceId=DEFAULTS.voiceId;
   }
 
+  function installHighlightStyle(){
+    if(styleNode) return;
+    styleNode=document.createElement("style");
+    styleNode.id="lnr-highlight-style";
+    styleNode.textContent=`
+      ::highlight(lnr-current) {
+        background: rgba(248, 113, 113, .32);
+        color: inherit;
+        text-shadow: 0 0 0 transparent;
+      }
+    `;
+    (document.head||document.documentElement).appendChild(styleNode);
+  }
+
+  function clearHighlight(){
+    if(globalThis.CSS?.highlights) CSS.highlights.delete("lnr-current");
+    const fallback=shadow?.querySelector("#fallback");
+    fallback?.replaceChildren();
+  }
+
+  function fallbackHighlight(range){
+    const fallback=shadow?.querySelector("#fallback");
+    if(!fallback) return;
+    fallback.replaceChildren();
+    for(const rect of range.getClientRects()){
+      if(!rect.width||!rect.height) continue;
+      const marker=document.createElement("div");
+      marker.style.cssText="position:fixed;background:rgba(248,113,113,.28);border-radius:3px;pointer-events:none;";
+      marker.style.left=(rect.left-2)+"px";
+      marker.style.top=(rect.top-1)+"px";
+      marker.style.width=(rect.width+4)+"px";
+      marker.style.height=(rect.height+2)+"px";
+      fallback.appendChild(marker);
+    }
+  }
+
+  function highlight(index,scroll=true){
+    const range=ranges[index];
+    if(!range) return;
+    activeIndex=index;
+
+    if(globalThis.CSS?.highlights && globalThis.Highlight){
+      CSS.highlights.set("lnr-current",new Highlight(range));
+    }else{
+      fallbackHighlight(range);
+    }
+
+    if(scroll){
+      const rect=range.getBoundingClientRect();
+      if(rect.top<90||rect.bottom>innerHeight-120){
+        const el=range.commonAncestorContainer.nodeType===1
+          ?range.commonAncestorContainer
+          :range.commonAncestorContainer.parentElement;
+        el?.scrollIntoView({block:"center",behavior:"smooth"});
+      }
+    }
+  }
+
+  function refreshFallback(){
+    if(activeIndex>=0 && ranges[activeIndex] && (!globalThis.CSS?.highlights)) fallbackHighlight(ranges[activeIndex]);
+  }
+
+  function update(){
+    if(!shadow) return;
+    shadow.querySelector("#play").textContent=paused?"Resume":playing?"Pause":"Play";
+    shadow.querySelector("#fill").style.width=(chunks.length?Math.min(100,finished/chunks.length*100):0)+"%";
+  }
+
+  function status(text){shadow?.querySelector("#status")&&(shadow.querySelector("#status").textContent=text);}
+  function error(text=""){
+    const n=shadow?.querySelector("#error");
+    if(!n) return;
+    n.textContent=text;
+    n.style.display=text?"block":"none";
+  }
+
+  function setVoiceCacheState(cached){
+    const b=shadow?.querySelector("#download");
+    if(!b) return;
+    b.textContent=cached?"✓":"↓";
+    b.title=cached?"Voice downloaded":"Download voice";
+    b.dataset.cached=cached?"1":"0";
+  }
+
   function ui(){
     if(host) return;
     host=document.createElement("div");
     host.id="lnr-host";
-    host.style.cssText="position:fixed;inset:0;width:100vw;height:100vh;z-index:2147483647;pointer-events:none;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;";
+    host.style.cssText="position:fixed;right:14px;bottom:14px;z-index:2147483647;pointer-events:none;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;";
     shadow=host.attachShadow({mode:"open"});
     shadow.innerHTML=`
       <style>
         *{box-sizing:border-box}
-        #hl{position:fixed;inset:0;pointer-events:none}
-        .mark{position:fixed;background:rgba(250,204,21,.24);box-shadow:0 0 0 1px rgba(250,204,21,.18);border-radius:4px}
-        #panel{position:fixed;top:16px;right:16px;width:min(360px,calc(100vw - 32px));max-height:calc(100vh - 32px);overflow:auto;padding:14px;border:1px solid rgba(255,255,255,.12);border-radius:16px;background:rgba(21,21,25,.95);color:#f4f4f5;box-shadow:0 18px 60px rgba(0,0,0,.42);backdrop-filter:blur(14px);pointer-events:auto}
-        .row{display:flex;gap:8px;align-items:center}.head{justify-content:space-between}.title{font-size:15px;font-weight:750}.sub{font-size:11px;opacity:.58;margin-top:2px}
-        button,input,select{font:inherit}button{border:0;border-radius:10px;padding:9px 10px;background:rgba(255,255,255,.09);color:inherit;cursor:pointer}button:hover{background:rgba(255,255,255,.15)}button.primary{background:#f4f4f5;color:#111;font-weight:700}.icon{width:34px;height:34px;padding:0;font-size:18px}
-        .transport{margin-top:10px}.transport button{flex:1}.field{margin-top:11px}.label{display:flex;justify-content:space-between;font-size:12px;opacity:.82;margin-bottom:6px}
-        input[type=search],select{width:100%;background:#101014;color:inherit;border:1px solid rgba(255,255,255,.12);border-radius:9px;padding:8px;outline:none}select{min-height:150px;margin-top:7px}option{background:#101014;padding:5px}
-        input[type=range]{width:100%;accent-color:#fff}.bar{height:5px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;margin-top:10px}.fill{height:100%;width:0;background:#facc15;transition:width .15s}
-        #status{margin-top:8px;min-height:18px;font-size:11px;line-height:1.4;opacity:.7}#error{display:none;margin-top:8px;padding:8px;border-radius:9px;background:rgba(239,68,68,.12);color:#fecaca;font-size:11px;white-space:pre-wrap}
+        #dock{width:286px;color:#f4f4f5;background:rgba(20,20,24,.94);border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 14px 45px rgba(0,0,0,.34);backdrop-filter:blur(14px);pointer-events:auto;overflow:hidden}
+        #top{display:flex;align-items:center;justify-content:space-between;padding:10px 11px;border-bottom:1px solid rgba(255,255,255,.07)}
+        #brand{display:flex;gap:8px;align-items:center;font-size:13px;font-weight:750}
+        #brandIcon{width:26px;height:26px;display:grid;place-items:center;border-radius:8px;background:rgba(255,255,255,.1)}
+        .icon{border:0;background:transparent;color:inherit;width:28px;height:28px;border-radius:8px;cursor:pointer}
+        .icon:hover{background:rgba(255,255,255,.09)}
+        #body{padding:10px}
+        #chapter{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.6;margin-bottom:8px}
+        .transport{display:flex;gap:6px}
+        button{font:inherit}
+        .transport button{flex:1;border:0;border-radius:9px;padding:9px;background:rgba(255,255,255,.08);color:inherit;cursor:pointer;font-size:16px}
+        .transport #play{background:#f4f4f5;color:#111;font-weight:750;font-size:13px}
+        .transport button:hover{background:rgba(255,255,255,.14)}
+        .transport #play:hover{background:#fff}
+        .bar{height:4px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;margin-top:9px}.fill{height:100%;width:0;background:#f87171}
+        #status{font-size:10px;line-height:1.35;opacity:.62;min-height:15px;margin-top:6px}
+        #error{display:none;background:rgba(239,68,68,.12);color:#fecaca;border-radius:8px;padding:7px;margin-top:6px;font-size:10px;line-height:1.35;white-space:pre-wrap}
+        .voiceRow{display:flex;gap:6px;align-items:center;margin-top:9px}
+        #voiceButton{flex:1;text-align:left;border:1px solid rgba(255,255,255,.1);background:#111116;color:inherit;border-radius:9px;padding:8px 9px;cursor:pointer;min-width:0}
+        #voiceName{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
+        #voiceMeta{display:block;margin-top:2px;font-size:9px;opacity:.5}
+        #download{width:34px;height:34px;padding:0;border:0;border-radius:9px;background:rgba(255,255,255,.09);color:inherit;cursor:pointer}
+        #download:hover{background:rgba(255,255,255,.15)}
+        #voices{display:none;margin-top:7px;padding:7px;border-radius:10px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.07)}
+        #voices.open{display:block}
+        input[type=search]{width:100%;padding:7px 8px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:#0f0f13;color:inherit;font:inherit;font-size:11px}
+        select{width:100%;height:116px;margin-top:6px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:#0f0f13;color:inherit;font:inherit;font-size:10px}
+        option{padding:4px;background:#0f0f13}
+        input[type=range]{width:100%;accent-color:#fff}
+        .field{margin-top:8px}.label{display:flex;justify-content:space-between;font-size:9px;opacity:.62;margin-bottom:3px}
+        details{margin-top:8px;font-size:10px;opacity:.8}summary{cursor:pointer;padding:4px 0}
+        #mini{position:fixed;right:0;bottom:30%;border:0;border-radius:12px 0 0 12px;background:rgba(20,20,24,.95);color:#f4f4f5;padding:9px 10px;box-shadow:0 10px 30px rgba(0,0,0,.3);pointer-events:auto;cursor:pointer;display:none}
+        #mini.visible{display:block}
       </style>
-      <div id="hl"></div>
-      <section id="panel">
-        <div class="row head"><div><div class="title">Light Novel Reader</div><div class="sub" id="chapter"></div></div><button class="icon" id="close">×</button></div>
-        <div class="row transport"><button id="back">‹</button><button class="primary" id="play">Play</button><button id="next">›</button><button id="stop">■</button></div>
-        <div class="bar"><div class="fill" id="fill"></div></div><div id="status">Ready.</div><div id="error"></div>
-        <div class="field"><div class="label"><span>Voice</span><span id="voiceId"></span></div><input id="voiceSearch" type="search" placeholder="Search voices: Alan, lessac, UK..."><select id="voice" size="7"></select></div>
-        <div class="field"><div class="label"><span>Speed</span><span id="speedText"></span></div><input id="speed" type="range" min="0.5" max="2.5" step="0.1"></div>
-        <div class="field"><div class="label"><span>Pre-buffer</span><span id="bufferText"></span></div><input id="prebuffer" type="range" min="1" max="4" step="1"></div>
-      </section>`;
-    document.documentElement.appendChild(host);
-    highlightLayer=shadow.querySelector("#hl");
+      <div id="dock">
+        <div id="top"><div id="brand"><span id="brandIcon">◉</span><span>Light Novel Reader</span></div><div><button class="icon" id="collapse" title="Collapse">−</button><button class="icon" id="close" title="Close">×</button></div></div>
+        <div id="body">
+          <div id="chapter"></div>
+          <div class="transport"><button id="back" title="Previous">‹</button><button id="play">Play</button><button id="next" title="Next">›</button></div>
+          <div class="bar"><div class="fill" id="fill"></div></div>
+          <div id="status">Ready.</div><div id="error"></div>
+          <div class="voiceRow"><button id="voiceButton"><span id="voiceName">Voice</span><span id="voiceMeta">Choose voice</span></button><button id="download" title="Download voice">↓</button></div>
+          <div id="voices">
+            <input id="voiceSearch" type="search" placeholder="Search voices...">
+            <select id="voiceList" size="6"></select>
+          </div>
+          <div class="field"><div class="label"><span>Speed</span><span id="speedText">1.0×</span></div><input id="speed" type="range" min="0.5" max="2.5" step="0.1"></div>
+          <details><summary>More</summary><div class="field"><div class="label"><span>Pre-buffer</span><span id="bufferText">3</span></div><input id="prebuffer" type="range" min="1" max="4" step="1"></div></details>
+        </div>
+      </div>
+      <button id="mini" title="Open reader">◉</button>
+      <div id="fallback"></div>
+    `;
 
     shadow.querySelector("#close").onclick=closeReader;
+    shadow.querySelector("#collapse").onclick=()=>{
+      shadow.querySelector("#dock").style.display="none";
+      shadow.querySelector("#mini").classList.add("visible");
+    };
+    shadow.querySelector("#mini").onclick=()=>{
+      shadow.querySelector("#dock").style.display="block";
+      shadow.querySelector("#mini").classList.remove("visible");
+    };
     shadow.querySelector("#play").onclick=toggle;
-    shadow.querySelector("#stop").onclick=stopPlayback;
     shadow.querySelector("#back").onclick=()=>jump(-1);
     shadow.querySelector("#next").onclick=()=>jump(1);
+    shadow.querySelector("#voiceButton").onclick=()=>shadow.querySelector("#voices").classList.toggle("open");
+    shadow.querySelector("#voiceSearch").oninput=e=>renderVoices(e.target.value);
+    shadow.querySelector("#voiceList").onchange=e=>changeVoice(e.target.value);
+    shadow.querySelector("#download").onclick=preloadSelected;
 
     shadow.querySelector("#speed").oninput=e=>{
       settings.speed=Number(e.target.value);
@@ -168,181 +308,245 @@
     };
     shadow.querySelector("#prebuffer").oninput=e=>{
       settings.prebufferChunks=Number(e.target.value);
-      shadow.querySelector("#bufferText").textContent=settings.prebufferChunks+" sentences";
-      browser.storage.local.set({settings}); fillQueue();
+      shadow.querySelector("#bufferText").textContent=String(settings.prebufferChunks);
+      browser.storage.local.set({settings});
+      fillQueue();
     };
-    shadow.querySelector("#voiceSearch").oninput=e=>renderVoices(e.target.value);
-    shadow.querySelector("#voice").onchange=e=>{
-      const v=e.target.value, wasPlaying=playing, at=Math.max(0,nextSchedule-1);
-      settings.voiceId=v; browser.storage.local.set({settings}); showVoice();
-      if(wasPlaying) startPlayback(at);
-    };
+
+    document.documentElement.appendChild(host);
   }
 
   function renderVoices(filter=""){
-    const q=filter.toLowerCase().trim(), select=shadow.querySelector("#voice"), current=settings.voiceId;
-    select.replaceChildren();
+    const list=shadow.querySelector("#voiceList"),q=filter.toLowerCase().trim(),current=settings.voiceId;
+    list.replaceChildren();
     const groups=new Map();
     for(const id of voices){
       const label=voiceLabel(id);
       if(q&&!id.toLowerCase().includes(q)&&!label.toLowerCase().includes(q)) continue;
-      const locale=id.slice(0,5); if(!groups.has(locale)) groups.set(locale,[]); groups.get(locale).push(id);
+      const locale=id.slice(0,5);
+      if(!groups.has(locale)) groups.set(locale,[]);
+      groups.get(locale).push(id);
     }
     for(const [locale,ids] of groups){
-      const group=document.createElement("optgroup"); group.label=locale.replace("_","-");
-      for(const id of ids){const o=document.createElement("option");o.value=id;o.textContent=voiceLabel(id);o.selected=id===current;group.appendChild(o);}
-      select.appendChild(group);
+      const group=document.createElement("optgroup");group.label=locale.replace("_","-");
+      for(const id of ids){
+        const option=document.createElement("option");
+        option.value=id;option.textContent=voiceLabel(id);option.selected=id===current;group.appendChild(option);
+      }
+      list.appendChild(group);
     }
-    if(!select.value&&select.options.length) select.options[0].selected=true;
+    if(!list.value&&list.options.length) list.options[0].selected=true;
     showVoice();
   }
 
   function showVoice(){
-    const id=shadow?.querySelector("#voice")?.value||settings.voiceId;
-    shadow?.querySelector("#voiceId")?.replaceChildren(document.createTextNode(id));
+    const id=settings.voiceId;
+    shadow?.querySelector("#voiceName")?.replaceChildren(document.createTextNode(voiceLabel(id)));
+    shadow?.querySelector("#voiceMeta")?.replaceChildren(document.createTextNode(id));
   }
 
-  function updateUi(){
-    if(!shadow) return;
-    shadow.querySelector("#play").textContent=paused?"Resume":playing?"Pause":"Play";
-    shadow.querySelector("#fill").style.width=(chunks.length?Math.min(100,finished/chunks.length*100):0)+"%";
-  }
-  function status(text){shadow?.querySelector("#status")&&(shadow.querySelector("#status").textContent=text)}
-  function error(text=""){const n=shadow?.querySelector("#error");if(!n)return;n.textContent=text;n.style.display=text?"block":"none"}
-
-  function clearHighlight(){highlightLayer?.replaceChildren()}
-  function refreshHighlight(){
-    if(!playing||nextSchedule<=0) return clearHighlight();
-    const r=ranges[nextSchedule-1]; if(!r) return;
-    highlightLayer.replaceChildren();
-    for(const rect of r.getClientRects()){
-      if(!rect.width||!rect.height) continue;
-      const m=document.createElement("div");m.className="mark";
-      m.style.left=(rect.left-3)+"px";m.style.top=(rect.top-2)+"px";m.style.width=(rect.width+6)+"px";m.style.height=(rect.height+4)+"px";
-      highlightLayer.appendChild(m);
-    }
-  }
-  function refresh(){if(raf)return;raf=requestAnimationFrame(()=>{raf=0;refreshHighlight()})}
-  function follow(index){
-    const r=ranges[index]; if(!r)return;
-    const rect=r.getBoundingClientRect();
-    if(rect.top<90||rect.bottom>innerHeight-120){
-      const el=r.commonAncestorContainer.nodeType===1?r.commonAncestorContainer:r.commonAncestorContainer.parentElement;
-      el?.scrollIntoView({block:"center",behavior:"smooth"});
-    }
-    refresh();
+  function changeVoice(id){
+    if(!id||id===settings.voiceId)return;
+    settings.voiceId=id;
+    browser.storage.local.set({settings});
+    showVoice();
+    error("");
+    checkVoice();
+    const wasPlaying=playing;
+    const at=Math.max(0,activeIndex);
+    if(wasPlaying) startPlayback(at);
+    else status("Voice selected. Click ↓ to download it.");
   }
 
-  function ctx(){if(!audioContext)audioContext=new AudioContext();return audioContext}
-  function killSources(){for(const s of sources){try{s.stop()}catch{}}sources.clear()}
+  function checkVoice(){
+    const requestId="check:"+settings.voiceId+":"+Date.now();
+    browser.runtime.sendMessage({type:"TTS_CHECK_VOICE",requestId,generation:0,voiceId:settings.voiceId}).catch(()=>{});
+  }
+
+  function preloadSelected(){
+    const requestId="preload:"+settings.voiceId+":"+Date.now();
+    setVoiceCacheState(false);
+    status("Downloading voice model...");
+    browser.runtime.sendMessage({
+      type:"TTS_PRELOAD",requestId,generation:0,voiceId:settings.voiceId
+    }).catch(e=>error(e instanceof Error?e.message:String(e)));
+  }
+
+  function audioCtx(){if(!audioContext)audioContext=new AudioContext();return audioContext}
+
+  function killSources(){
+    for(const source of scheduled.values()){try{source.stop()}catch{}}
+    scheduled.clear();
+  }
 
   function reset(index){
-    killSources();decoded.clear();pending.clear();nextSynthesis=index;nextSchedule=index;finished=index;nextStartTime=0;generation++;
-    browser.runtime.sendMessage({type:"TTS_STOP"}).catch(()=>{});
-    clearHighlight();updateUi();
+    killSources();decoded.clear();pending.clear();nextSynthesis=index;nextSchedule=index;finished=index;
+    nextStartTime=0;activeIndex=-1;waitingHighlight=-1;generation++;
+    clearHighlight();browser.runtime.sendMessage({type:"TTS_STOP"}).catch(()=>{});update();
   }
 
-  async function askTts(index){
-    if(index>=chunks.length||pending.has(index)||decoded.has(index))return;
+  async function requestSynthesis(index){
+    if(index>=chunks.length||pending.has(index)||decoded.has(index)||scheduled.has(index))return;
     const requestId=index+":"+generation+":"+Math.random().toString(36).slice(2);
     pending.set(index,requestId);
     try{
-      await browser.runtime.sendMessage({type:"TTS_SYNTHESIZE",requestId,generation,voiceId:settings.voiceId,text:chunks[index]});
-    }catch(e){pending.delete(index);playing=false;error(e instanceof Error?e.message:String(e));updateUi();}
+      await browser.runtime.sendMessage({
+        type:"TTS_SYNTHESIZE",requestId,generation,voiceId:settings.voiceId,text:chunks[index]
+      });
+    }catch(e){
+      pending.delete(index);playing=false;error(e instanceof Error?e.message:String(e));update();
+    }
   }
 
   function fillQueue(){
     if(!playing)return;
     const target=Math.min(chunks.length,nextSchedule+Number(settings.prebufferChunks||3));
-    while(nextSynthesis<target){askTts(nextSynthesis);nextSynthesis++;}
+    while(nextSynthesis<target){requestSynthesis(nextSynthesis);nextSynthesis++;}
   }
 
   async function onAudio(index,buffer){
     if(!playing)return;
-    const b=await ctx().decodeAudioData(buffer.slice(0)); if(!playing)return;
-    decoded.set(index,b);schedule();fillQueue();
+    const b=await audioCtx().decodeAudioData(buffer.slice(0));
+    if(!playing)return;
+    decoded.set(index,b);scheduleReady();fillQueue();
   }
 
-  function schedule(){
+  function scheduleReady(){
     if(!playing||paused)return;
-    const c=ctx(),safe=.06;
+    const c=audioCtx(),safe=.06;
     if(!nextStartTime||nextStartTime<c.currentTime+safe)nextStartTime=c.currentTime+safe;
-    let first=true;
+
     while(decoded.has(nextSchedule)){
-      const index=nextSchedule,b=decoded.get(index);decoded.delete(index);if(!b)break;
-      const source=c.createBufferSource();source.buffer=b;source.playbackRate.value=Number(settings.speed);source.connect(c.destination);
-      const when=Math.max(nextStartTime,c.currentTime+safe);sources.add(source);
+      const index=nextSchedule,b=decoded.get(index);
+      decoded.delete(index);
+      if(!b)break;
+
+      const source=c.createBufferSource();
+      source.buffer=b;source.playbackRate.value=Number(settings.speed);source.connect(c.destination);
+      const when=Math.max(nextStartTime,c.currentTime+safe);
+      scheduled.set(index,{source,when});
       source.onended=()=>{
-        sources.delete(source);if(!playing)return;
-        finished=Math.max(finished,index+1);updateUi();
-        if(index+1>=chunks.length){playing=false;paused=false;clearHighlight();status("Finished.");updateUi();return;}
-        follow(index+1);fillQueue();
+        scheduled.delete(index);
+        if(!playing)return;
+        finished=Math.max(finished,index+1);update();
+        if(index+1>=chunks.length){
+          playing=false;paused=false;clearHighlight();status("Finished.");update();return;
+        }
+        if(scheduled.has(index+1)) highlight(index+1);
+        else waitingHighlight=index+1;
+        fillQueue();
       };
-      source.start(when);nextStartTime=when+b.duration/Number(settings.speed);nextSchedule++;
-      if(first){follow(index);first=false;}
+      source.start(when);
+      nextStartTime=when+b.duration/Number(settings.speed);
+      nextSchedule++;
+
+      if(activeIndex<0) highlight(index);
+      else if(waitingHighlight===index){waitingHighlight=-1;highlight(index);}
     }
   }
 
   function startPlayback(index=nextSchedule){
     if(!chunks.length)return;
-    reset(Math.max(0,Math.min(chunks.length-1,index)));playing=true;paused=false;error("");status("Generating speech...");
-    ctx().resume();updateUi();follow(nextSchedule);fillQueue();
+    reset(Math.max(0,Math.min(chunks.length-1,index)));
+    playing=true;paused=false;error("");status("Preparing speech...");
+    audioCtx().resume();update();fillQueue();
   }
 
   function toggle(){
     if(!chunks.length)return;
-    if(!playing)return startPlayback(nextSchedule);
-    const c=ctx();
-    if(paused){c.resume();paused=false;status("Playing.");schedule()}else{c.suspend();paused=true;status("Paused.");}
-    updateUi();refresh();
+    if(!playing)return startPlayback(activeIndex>=0?activeIndex:nextSchedule);
+    if(paused){
+      audioCtx().resume();paused=false;status("Playing.");scheduleReady();
+    }else{
+      audioCtx().suspend();paused=true;status("Paused.");
+    }
+    update();
   }
 
   function stopPlayback(){
     playing=false;paused=false;killSources();decoded.clear();pending.clear();
     browser.runtime.sendMessage({type:"TTS_STOP"}).catch(()=>{});
     if(audioContext)audioContext.suspend();
-    status("Stopped.");clearHighlight();updateUi();
+    clearHighlight();status("Stopped.");update();
   }
 
-  function jump(delta){if(chunks.length)startPlayback(Math.max(0,Math.min(chunks.length-1,nextSchedule+delta)))}
+  function jump(delta){
+    const base=activeIndex>=0?activeIndex:nextSchedule;
+    if(chunks.length)startPlayback(Math.max(0,Math.min(chunks.length-1,base+delta)));
+  }
 
   function closeReader(){
-    stopPlayback();host?.remove();host=null;shadow=null;highlightLayer=null;chunks=[];ranges=[];root=null;
+    stopPlayback();
+    if(globalThis.CSS?.highlights)CSS.highlights.delete("lnr-current");
+    styleNode?.remove();
+    host?.remove();
+    host=null;shadow=null;root=null;chunks=[];ranges=[];
   }
 
   async function startReader(){
-    ui();await loadSettings();
+    ui();installHighlightStyle();await loadSettings();
     root=bestRoot();
     if(!root){error("Could not find readable chapter text on this page.");return;}
-    const data=extract(), indexed=buildRanges(root);
-    chunks=indexed.chunks.length?indexed.chunks:data.chunks;ranges=indexed.ranges;
+    const data=extract(),indexed=buildRanges(root);
+    chunks=indexed.chunks.length?indexed.chunks:data.chunks;
+    ranges=indexed.ranges;
     if(!chunks.length){error("No readable chapter text was found on this page.");return;}
+
     shadow.querySelector("#chapter").textContent=data.title||"Current page";
-    shadow.querySelector("#speed").value=settings.speed;shadow.querySelector("#speedText").textContent=Number(settings.speed).toFixed(1)+"×";
-    shadow.querySelector("#prebuffer").value=settings.prebufferChunks;shadow.querySelector("#bufferText").textContent=settings.prebufferChunks+" sentences";
-    renderVoices();nextSynthesis=nextSchedule=finished=0;updateUi();error("");status(chunks.length+" sentences ready. Press Play.");
+    shadow.querySelector("#speed").value=settings.speed;
+    shadow.querySelector("#speedText").textContent=Number(settings.speed).toFixed(1)+"×";
+    shadow.querySelector("#prebuffer").value=settings.prebufferChunks;
+    shadow.querySelector("#bufferText").textContent=String(settings.prebufferChunks);
+    renderVoices();checkVoice();
+    nextSynthesis=nextSchedule=finished=0;activeIndex=-1;waitingHighlight=-1;update();error("");
+    status(chunks.length+" sentences ready. Click Play or download the voice first.");
   }
 
   browser.runtime.onMessage.addListener(message=>{
     if(message?.type==="TOGGLE_READER") return host?closeReader():startReader();
     if(message?.type==="START_READER") return startReader();
-    if(message?.type==="EXTRACT_PAGE"){const data=extract();return Promise.resolve(data);}
+    if(message?.type==="EXTRACT_PAGE"){const d=extract();return Promise.resolve(d);}
+
     if(message?.type==="TTS_AUDIO"){
       if(!playing||message.generation!==generation)return;
       const index=Number(String(message.requestId).split(":")[0]);pending.delete(index);
-      onAudio(index,message.buffer).catch(e=>{playing=false;error(e instanceof Error?e.message:String(e));updateUi();});
+      onAudio(index,message.buffer).catch(e=>{playing=false;error(e instanceof Error?e.message:String(e));update();});
     }
+
     if(message?.type==="TTS_PROGRESS"){
-      if(!playing||message.generation!==generation)return;
       const p=message.progress||{};
-      status(p.total&&p.url?.endsWith(".onnx")?"Downloading voice model: "+Math.round(p.loaded/p.total*100)+"%":"Preparing voice...");
+      if(p.stage==="model-download"||p.stage==="model-start"){
+        if(p.total){
+          status("Downloading voice model: "+Math.min(100,Math.round(p.loaded/p.total*100))+"%");
+        }else{
+          status("Downloading voice model...");
+        }
+      }else if(p.stage==="model-complete"){
+        status("Voice downloaded. Initializing...");
+      }else if(p.stage==="model-initializing"){
+        status("Initializing voice...");
+      }else if(p.stage==="model-ready"){
+        setVoiceCacheState(true);status("Voice ready.");
+      }
     }
+
+    if(message?.type==="TTS_VOICE_STATUS"){
+      if(message.voiceId===settings.voiceId)setVoiceCacheState(Boolean(message.cached));
+    }
+
+    if(message?.type==="TTS_VOICE_READY"){
+      if(message.voiceId===settings.voiceId){setVoiceCacheState(true);status("Voice downloaded and ready.");}
+    }
+
     if(message?.type==="TTS_ERROR"){
-      if(message.generation!==generation)return;
-      pending.delete(Number(String(message.requestId).split(":")[0]));playing=false;error(message.error||"TTS synthesis failed.");updateUi();
+      error(message.error||"TTS failed.");
+      if(message.generation===generation)playing=false;
+      update();
     }
   });
 
-  window.addEventListener("scroll",refresh,true);
-  window.addEventListener("resize",refresh);
+  window.addEventListener("scroll",refreshFallback,true);
+  window.addEventListener("resize",refreshFallback);
+
+  browser.runtime.onMessage.addListener(()=>{});
 })();

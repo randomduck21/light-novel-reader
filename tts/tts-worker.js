@@ -4,7 +4,7 @@ let session = null;
 let activeVoice = null;
 let queue = Promise.resolve();
 
-const CACHE_VERSION = "0.5.0";
+const CACHE_VERSION = "0.6.0";
 const HF_BASE = "https://huggingface.co/diffusionstudio/piper-voices/resolve/main";
 
 function voiceFiles(voiceId) {
@@ -28,10 +28,10 @@ async function piperDir() {
   return root.getDirectoryHandle("piper", { create: true });
 }
 
-async function fileExists(dir, name) {
+async function fileExists(dir, name, minimumBytes = 1) {
   try {
-    await dir.getFileHandle(name);
-    return true;
+    const file = await dir.getFileHandle(name);
+    return (await file.getFile()).size >= minimumBytes;
   } catch {
     return false;
   }
@@ -40,7 +40,7 @@ async function fileExists(dir, name) {
 async function isVoiceCached(voiceId) {
   const files = voiceFiles(voiceId);
   const dir = await piperDir();
-  return (await fileExists(dir, files.name)) && (await fileExists(dir, files.name + ".json"));
+  return (await fileExists(dir, files.name, 1000000)) && (await fileExists(dir, files.name + ".json", 32));
 }
 
 async function resetCacheOnce() {
@@ -92,8 +92,17 @@ async function downloadFile(url, fileName, postProgress, totalBase = 0) {
     }
   }
 
+  if (url.endsWith(".onnx") && loaded < 1000000) {
+    throw new Error("Voice model download was incomplete or invalid (" + loaded + " bytes): " + url);
+  }
+
+  const contentType = response.headers.get("Content-Type") || "";
+  if (url.endsWith(".onnx") && /^text\/(html|plain)/i.test(contentType) && loaded < 5000000) {
+    throw new Error("Voice model download returned text instead of ONNX data: " + url);
+  }
+
   const blob = new Blob(chunks, {
-    type: response.headers.get("Content-Type") || "application/octet-stream"
+    type: contentType || "application/octet-stream"
   });
 
   const dir = await piperDir();
@@ -111,8 +120,8 @@ async function ensureVoiceCached(voiceId, postProgress = () => {}) {
   const files = voiceFiles(voiceId);
   const dir = await piperDir();
 
-  const hasOnnx = await fileExists(dir, files.name);
-  const hasJson = await fileExists(dir, files.name + ".json");
+  const hasOnnx = await fileExists(dir, files.name, 1000000);
+  const hasJson = await fileExists(dir, files.name + ".json", 32);
   if (hasOnnx && hasJson) {
     postProgress({ stage: "model-cached", url: files.onnx, loaded: 1, total: 1 });
     return false;

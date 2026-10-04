@@ -33,11 +33,11 @@ async function patchPiperCompatibility() {
 
   source = source.replace(
     speakerNeedle,
-    'const maxSymbols = Number(__privateGet(this, _modelConfig)?.num_symbols || 256);\\n' +
-    '    if (Number.isFinite(maxSymbols) && maxSymbols > 0 && maxSymbols < 256) {\\n' +
-    '      phonemeIds = phonemeIds.filter(id => Number(id) >= 0 && Number(id) < maxSymbols);\\n' +
-    '    }\\n\\n' +
-    '    const speakerId = 0;'
+    "const maxSymbols = Number(__privateGet(this, _modelConfig)?.num_symbols || 256);\n" +
+    "    if (Number.isFinite(maxSymbols) && maxSymbols > 0 && maxSymbols < 256) {\n" +
+    "      phonemeIds = phonemeIds.filter(id => Number(id) >= 0 && Number(id) < maxSymbols);\n" +
+    "    }\n\n" +
+    "    const speakerId = 0;"
   );
 
   await writeFile(packageEntry, source);

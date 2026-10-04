@@ -22,14 +22,16 @@ let worker = null;
 let chunks = [];
 let decoded = new Map();
 let pending = new Map();
+let scheduledSources = new Set();
 let nextSynthesis = 0;
 let nextSchedule = 0;
 let nextStartTime = 0;
 let generation = 0;
+let currentGeneration = 0;
 let playing = false;
 let paused = false;
 let finishedChunks = 0;
-let currentSource = null;
+
 let settings = {
   voiceId: "en_US-lessac-medium",
   speed: 1,
@@ -53,9 +55,7 @@ function updateProgress() {
 }
 
 function ensureAudioContext() {
-  if (!audioContext) {
-    audioContext = new AudioContext();
-  }
+  if (!audioContext) audioContext = new AudioContext();
   return audioContext;
 }
 
@@ -68,8 +68,10 @@ function createWorker() {
 
 function requestSynthesis(index) {
   if (index >= chunks.length || pending.has(index) || decoded.has(index)) return;
+
   const requestId = index + ":" + generation + ":" + Math.random().toString(36).slice(2);
   pending.set(index, requestId);
+
   worker.postMessage({
     type: "SYNTHESIZE",
     requestId,
@@ -89,9 +91,12 @@ function fillSynthesisQueue() {
 
 async function handleAudio(index, buffer) {
   if (generation !== currentGeneration) return;
+
   const ctx = ensureAudioContext();
   const audioBuffer = await ctx.decodeAudioData(buffer.slice(0));
+
   if (generation !== currentGeneration) return;
+
   decoded.set(index, audioBuffer);
   scheduleReadyBuffers();
   fillSynthesisQueue();
@@ -102,6 +107,7 @@ function scheduleReadyBuffers() {
 
   const ctx = ensureAudioContext();
   const safety = 0.06;
+
   if (!nextStartTime || nextStartTime < ctx.currentTime + safety) {
     nextStartTime = ctx.currentTime + safety;
   }
@@ -117,11 +123,13 @@ function scheduleReadyBuffers() {
 
     const index = nextSchedule;
     const when = Math.max(nextStartTime, ctx.currentTime + safety);
-    source.start(when);
+
     source.onended = () => {
+      scheduledSources.delete(source);
+
       if (generation !== currentGeneration) return;
+
       finishedChunks = Math.max(finishedChunks, index + 1);
-      if (currentSource === source) currentSource = null;
       updateProgress();
 
       if (index + 1 >= chunks.length) {
@@ -129,38 +137,58 @@ function scheduleReadyBuffers() {
         paused = false;
         pauseButton.textContent = "Play";
         setStatus("Finished.");
+      } else {
+        fillSynthesisQueue();
       }
     };
 
-    currentSource = source;
+    scheduledSources.add(source);
+    source.start(when);
     nextStartTime = when + buffer.duration / Number(settings.speed);
+
     decoded.delete(index);
     nextSchedule += 1;
   }
 }
 
-let currentGeneration = 0;
+function stopScheduledSources() {
+  for (const source of scheduledSources) {
+    try {
+      source.stop();
+    } catch {
+      // Already ended.
+    }
+  }
+  scheduledSources.clear();
+}
 
 function resetGeneration(index) {
+  stopScheduledSources();
+
   generation += 1;
   currentGeneration = generation;
-  for (const source of []) source.stop();
+
   decoded.clear();
   pending.clear();
   nextSynthesis = index;
   nextSchedule = index;
   finishedChunks = index;
   nextStartTime = 0;
+  updateProgress();
 }
 
 function startPlayback(index = nextSchedule) {
   if (!chunks.length) return;
+
   resetGeneration(index);
   createWorker();
+
   playing = true;
   paused = false;
   pauseButton.textContent = "Pause";
   setStatus("Generating speech...");
+  setError("");
+
   const ctx = ensureAudioContext();
   ctx.resume();
   fillSynthesisQueue();
@@ -174,11 +202,9 @@ async function handleWorkerMessage(event) {
     if (message.progress?.url?.endsWith(".onnx")) {
       const loaded = message.progress.loaded || 0;
       const total = message.progress.total || 0;
-      if (total) {
-        setStatus("Downloading voice model: " + Math.round((loaded / total) * 100) + "%");
-      } else {
-        setStatus("Downloading voice model...");
-      }
+      setStatus(total
+        ? "Downloading voice model: " + Math.round((loaded / total) * 100) + "%"
+        : "Downloading voice model...");
     } else {
       setStatus("Preparing voice...");
     }
@@ -188,11 +214,16 @@ async function handleWorkerMessage(event) {
   if (message.type === "AUDIO") {
     const index = Number(String(message.requestId).split(":")[0]);
     pending.delete(index);
+
     try {
       await handleAudio(index, message.buffer);
-      setStatus("Ready: " + Math.min(chunks.length, nextSchedule + settings.prebufferChunks) + " buffered/requested");
+      if (generation === currentGeneration) {
+        setStatus("Buffered speech through chunk " + Math.min(chunks.length, nextSchedule + settings.prebufferChunks));
+      }
     } catch (error) {
       setError(error instanceof Error ? error.message : String(error));
+      playing = false;
+      pauseButton.textContent = "Play";
     }
     return;
   }
@@ -209,8 +240,11 @@ async function handleWorkerMessage(event) {
 function stopPlayback() {
   playing = false;
   paused = false;
+  stopScheduledSources();
+
   if (audioContext) audioContext.suspend();
   if (worker) worker.terminate();
+
   worker = null;
   decoded.clear();
   pending.clear();
@@ -218,8 +252,10 @@ function stopPlayback() {
   nextSchedule = 0;
   finishedChunks = 0;
   nextStartTime = 0;
+
   generation += 1;
   currentGeneration = generation;
+
   pauseButton.textContent = "Play";
   updateProgress();
   setStatus("Stopped.");
@@ -253,16 +289,16 @@ function jump(delta) {
   startPlayback(target);
 }
 
-function loadVoiceSettings() {
-  return browser.storage.local.get("settings").then(({ settings: saved }) => {
-    if (!saved) return;
-    settings = { ...settings, ...saved };
-    voiceInput.value = settings.voiceId;
-    speedInput.value = settings.speed;
-    speedValue.textContent = Number(settings.speed).toFixed(2) + "x";
-    prebufferInput.value = settings.prebufferChunks;
-    prebufferValue.textContent = settings.prebufferChunks + " chunks";
-  });
+async function loadVoiceSettings() {
+  const { settings: saved } = await browser.storage.local.get("settings");
+  if (!saved) return;
+
+  settings = { ...settings, ...saved };
+  voiceInput.value = settings.voiceId;
+  speedInput.value = settings.speed;
+  speedValue.textContent = Number(settings.speed).toFixed(2) + "x";
+  prebufferInput.value = settings.prebufferChunks;
+  prebufferValue.textContent = settings.prebufferChunks + " chunks";
 }
 
 async function loadChapter() {
@@ -272,6 +308,7 @@ async function loadChapter() {
   }
 
   setStatus("Extracting chapter text...");
+
   const result = await browser.tabs.sendMessage(sourceTabId, { type: "EXTRACT_PAGE" });
 
   chunks = result?.chunks || [];
@@ -309,8 +346,10 @@ prebufferInput.addEventListener("input", () => {
 voiceInput.addEventListener("change", () => {
   const nextVoice = voiceInput.value.trim();
   if (!nextVoice || nextVoice === settings.voiceId) return;
+
   settings.voiceId = nextVoice;
   browser.storage.local.set({ settings });
+
   if (chunks.length) startPlayback(nextSchedule);
 });
 
@@ -319,6 +358,7 @@ settingsButton.addEventListener("click", () => {
 });
 
 window.addEventListener("beforeunload", () => {
+  stopScheduledSources();
   if (worker) worker.terminate();
 });
 

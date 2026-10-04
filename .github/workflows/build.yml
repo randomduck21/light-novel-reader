@@ -27,5 +27,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: light-novel-reader-xpi
-          path: dist/light-novel-reader.xpi
+          path: light-novel-reader.xpi
           if-no-files-found: error

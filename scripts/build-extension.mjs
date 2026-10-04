@@ -20,7 +20,7 @@ for(const p of ["manifest.json","popup/popup.html","popup/popup.css","player/pla
 for(const [src,out] of [["background/background.js","background/background.js"],["content/content.js","content/content.js"],["popup/popup.js","popup/popup.js"],["player/player.js","player/player.js"],["settings/settings.js","settings/settings.js"],["tts/tts-worker.js","tts/tts-worker.js"]])
   await build({entryPoints:[join(root,src)],outfile:join(dist,out),bundle:src==="tts/tts-worker.js",format:"esm",platform:"browser",target:"es2022",sourcemap:false,minify:false,plugins:src==="tts/tts-worker.js"?[shim]:[]});
 
-await download("https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.wasm",join(dist,"vendor/piper_phonemize.wasm"));
+for(const file of ["ort-wasm-simd-threaded.jsep.mjs","ort-wasm-simd-threaded.jsep.wasm","ort-wasm-simd-threaded.mjs","ort-wasm-simd-threaded.wasm"]){\n  if(!(await copy(join(root,"node_modules/onnxruntime-web/dist",file),join(dist,"vendor/onnx",file))))\n    throw new Error("Missing ONNX Runtime WASM artifact: "+file);\n}\n\nawait download("https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.wasm",join(dist,"vendor/piper_phonemize.wasm"));
 await download("https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.data",join(dist,"vendor/piper_phonemize.data"));
 
 execSync(`npx --yes web-ext@10.7.0 lint --source-dir "${dist}"`,{stdio:"inherit",cwd:root,windowsHide:true});

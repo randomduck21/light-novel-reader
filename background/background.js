@@ -33,7 +33,7 @@ function ensureTtsWorker(tabId){
 
 function wasmPaths(){
   return {
-    onnxWasm:"https://cdn.jsdelivr.net/npm/onnxruntime-web@1.22.0/dist/",
+    onnxWasm:browser.runtime.getURL("vendor/onnx/"),
     piperData:browser.runtime.getURL("vendor/piper_phonemize.data"),
     piperWasm:browser.runtime.getURL("vendor/piper_phonemize.wasm")
   };

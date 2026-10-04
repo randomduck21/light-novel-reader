@@ -38,7 +38,7 @@ async function createSession(voiceId, wasmPaths, postProgress) {
     },
     wasmPaths,
     allowLocalModels: true,
-    fallbackStrategy: "local"
+    fallbackStrategy: "cdn"
   });
 
   return session;

@@ -9,6 +9,10 @@
     "default_title": "Light Novel Reader",
     "default_popup": "popup/popup.html"
   },
+  "options_ui": {
+    "page": "settings/settings.html",
+    "open_in_tab": true
+  },
   "background": {
     "service_worker": "background/background.js"
   },

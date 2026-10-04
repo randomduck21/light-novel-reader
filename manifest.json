@@ -1,46 +1,14 @@
 {
-  "manifest_version": 3,
-  "name": "Light Novel Reader",
-  "version": "0.3.0",
-  "description": "A smooth, local text-to-speech reader for light-novel chapters on arbitrary websites.",
-  "permissions": [
-    "storage",
-    "activeTab",
-    "scripting"
-  ],
-  "host_permissions": [
-    "<all_urls>"
-  ],
-  "action": {
-    "default_title": "Light Novel Reader",
-    "default_popup": "popup/popup.html"
-  },
-  "options_ui": {
-    "page": "settings/settings.html",
-    "open_in_tab": true
-  },
-  "background": {
-    "scripts": [
-      "background/background.js"
-    ]
-  },
-  "content_scripts": [
-    {
-      "matches": [
-        "<all_urls>"
-      ],
-      "js": [
-        "content/content.js"
-      ],
-      "run_at": "document_idle"
-    }
-  ],
-  "content_security_policy": {
-    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
-  },
-  "browser_specific_settings": {
-    "gecko": {
-      "id": "light-novel-reader@randomduck21"
-    }
-  }
+  "manifest_version":3,
+  "name":"Light Novel Reader",
+  "version":"0.4.0",
+  "description":"A smooth, local text-to-speech reader for light-novel chapters on arbitrary websites.",
+  "permissions":["storage","activeTab","scripting"],
+  "host_permissions":["<all_urls>"],
+  "action":{"default_title":"Light Novel Reader","default_popup":"popup/popup.html"},
+  "options_ui":{"page":"settings/settings.html","open_in_tab":true},
+  "background":{"scripts":["background/background.js"]},
+  "content_scripts":[{"matches":["<all_urls>"],"js":["tts/voices.js","content/content.js"],"run_at":"document_idle"}],
+  "content_security_policy":{"extension_pages":"script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"},
+  "browser_specific_settings":{"gecko":{"id":"light-novel-reader@randomduck21"}}
 }

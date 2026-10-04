@@ -347,13 +347,13 @@
 
   function changeVoice(id){
     if(!id||id===settings.voiceId)return;
+    const wasPlaying=playing;
+    const at=Math.max(0,activeIndex>=0?activeIndex:nextSchedule);
     settings.voiceId=id;
     browser.storage.local.set({settings});
     showVoice();
     error("");
     checkVoice();
-    const wasPlaying=playing;
-    const at=Math.max(0,activeIndex);
     if(wasPlaying) startPlayback(at);
     else status("Voice selected. Click ↓ to download it.");
   }
@@ -379,10 +379,12 @@
     scheduled.clear();
   }
 
-  function reset(index){
+  async function reset(index){
     killSources();decoded.clear();pending.clear();nextSynthesis=index;nextSchedule=index;finished=index;
     nextStartTime=0;activeIndex=-1;waitingHighlight=-1;generation++;
-    clearHighlight();browser.runtime.sendMessage({type:"TTS_STOP"}).catch(()=>{});update();
+    clearHighlight();
+    try{await browser.runtime.sendMessage({type:"TTS_STOP"});}catch{}
+    update();
   }
 
   async function requestSynthesis(index){
@@ -445,11 +447,13 @@
     }
   }
 
-  function startPlayback(index=nextSchedule){
+  async function startPlayback(index=nextSchedule){
     if(!chunks.length)return;
-    reset(Math.max(0,Math.min(chunks.length-1,index)));
+    await reset(Math.max(0,Math.min(chunks.length-1,index)));
+    if(!chunks.length)return;
     playing=true;paused=false;error("");status("Preparing speech...");
-    audioCtx().resume();update();fillQueue();
+    try{await audioCtx().resume();}catch{}
+    update();fillQueue();
   }
 
   function toggle(){

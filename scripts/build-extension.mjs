@@ -17,7 +17,7 @@ async function patchPiperCompatibility() {
   const packageEntry = join(root,"node_modules/@realtimex/piper-tts-web/dist/piper-tts-web.js");
   let source = await readFile(packageEntry, "utf8");
 
-  if (!/const phonemeIds\\s*=\\s*await new Promise/.test(source)) {
+  if (!/const phonemeIds\s*=\s*await new Promise/.test(source)) {
     throw new Error("Could not locate Piper phoneme ID generation code in " + packageEntry);
   }
 
@@ -26,14 +26,14 @@ async function patchPiperCompatibility() {
     "let phonemeIds = await new Promise"
   );
 
-  const speakerNeedle = /const speakerId\\s*=\\s*0\\s*;/;
+  const speakerNeedle = /const speakerId\s*=\s*0\s*;/;
   if (!speakerNeedle.test(source)) {
     throw new Error("Could not locate Piper speaker ID block in " + packageEntry);
   }
 
   source = source.replace(
     speakerNeedle,
-    'const maxSymbols = Number(this.#modelConfig?.num_symbols || 256);\\n' +
+    'const maxSymbols = Number(__privateGet(this, _modelConfig)?.num_symbols || 256);\\n' +
     '    if (Number.isFinite(maxSymbols) && maxSymbols > 0 && maxSymbols < 256) {\\n' +
     '      phonemeIds = phonemeIds.filter(id => Number(id) >= 0 && Number(id) < maxSymbols);\\n' +
     '    }\\n\\n' +

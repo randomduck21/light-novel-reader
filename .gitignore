@@ -3,12 +3,13 @@
 Thumbs.db
 .vscode/
 
-# Temporary build output
+# Build output
 dist/
 build/
 *.zip
+*.xpi
 
-# Local model files
+# Local voice/model files
 models/
 *.onnx
 *.onnx.json

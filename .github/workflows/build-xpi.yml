@@ -22,6 +22,10 @@ jobs:
       - name: Install dependencies
         run: npm install
 
+      - name: Inspect Piper bundle
+        run: |
+          node -e "const fs=require('fs'); const p='node_modules/@realtimex/piper-tts-web/dist/piper-tts-web.js'; const s=fs.readFileSync(p,'utf8'); for (const term of ['phoneme_ids','phonemeIds','speakerId','new Promise']) { const i=s.indexOf(term); console.log('TERM',term,'INDEX',i); if(i>=0) console.log(s.slice(Math.max(0,i-1200),i+2200)); }"
+
       - name: Build extension
         run: npm run build
 

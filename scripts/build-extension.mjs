@@ -59,7 +59,8 @@ for (const pair of [
     platform: "browser",
     target: "es2022",
     sourcemap: false,
-    minify: false
+    minify: false,
+    external: pair[0] === "tts/tts-worker.js" ? ["fs", "path"] : []
   });
 }
 

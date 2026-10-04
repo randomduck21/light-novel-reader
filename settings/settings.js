@@ -1,21 +1,5 @@
-const voice = document.querySelector("#voice");
-const prebuffer = document.querySelector("#prebuffer");
-const save = document.querySelector("#save");
-const status = document.querySelector("#status");
-
-async function load() {
-  const { settings = {} } = await browser.storage.local.get("settings");
-  if (settings.voiceId) voice.value = settings.voiceId;
-  if (settings.prebufferChunks) prebuffer.value = settings.prebufferChunks;
-}
-
-save.addEventListener("click", async () => {
-  const settings = {
-    voiceId: voice.value.trim() || "en_US-lessac-medium",
-    prebufferChunks: Math.max(1, Math.min(4, Number(prebuffer.value) || 3))
-  };
-  await browser.storage.local.set({ settings });
-  status.textContent = "Saved.";
-});
-
-load();
+const voice=document.querySelector("#voice"),search=document.querySelector("#voiceSearch"),selected=document.querySelector("#selectedVoice"),pre=document.querySelector("#prebuffer"),preText=document.querySelector("#prebufferValue"),save=document.querySelector("#save"),status=document.querySelector("#status");const voices=globalThis.LNR_VOICES||["en_US-lessac-medium"],label=globalThis.LNR_VOICE_LABEL||((x)=>x);
+function render(filter=""){const q=filter.toLowerCase().trim(),cur=voice.value;voice.replaceChildren();for(const locale of [...new Set(voices.map(x=>x.slice(0,5)))]){const ids=voices.filter(id=>id.startsWith(locale)&&(!q||id.toLowerCase().includes(q)||label(id).toLowerCase().includes(q)));if(!ids.length)continue;const g=document.createElement("optgroup");g.label=locale.replace("_","-");for(const id of ids){const o=document.createElement("option");o.value=id;o.textContent=label(id);g.appendChild(o)}voice.appendChild(g)}if([...voice.options].some(o=>o.value===cur))voice.value=cur;else if(voice.options.length)voice.options[0].selected=true;selected.textContent=voice.value||""}
+search.oninput=()=>render(search.value);voice.onchange=()=>selected.textContent=voice.value;pre.oninput=()=>preText.textContent=pre.value+" sentences";
+(async()=>{const {settings={}}=await browser.storage.local.get("settings");voice.value=settings.voiceId||"en_US-lessac-medium";pre.value=settings.prebufferChunks||3;preText.textContent=pre.value+" sentences";render()})();
+save.onclick=async()=>{const old=(await browser.storage.local.get("settings")).settings||{};await browser.storage.local.set({settings:{...old,voiceId:voice.value||"en_US-lessac-medium",prebufferChunks:Number(pre.value)||3}});status.textContent="Saved."};

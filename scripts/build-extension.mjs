@@ -82,20 +82,8 @@ for (const pair of [
   });
 }
 
-const ortDist = join(root, "node_modules/onnxruntime-web/dist");
-const ortVendor = join(dist, "vendor/ort");
-await mkdir(ortVendor, { recursive: true });
-
-for (const name of [
-  "ort-wasm.wasm",
-  "ort-wasm-threaded.wasm",
-  "ort-wasm-simd.wasm",
-  "ort-wasm-simd-threaded.wasm"
-]) {
-  const ok = await copyIfExists(join(ortDist, name), join(ortVendor, name));
-  if (!ok) throw new Error("Missing ONNX Runtime asset: " + name);
-}
-
+// Piper phonemizer assets are packaged locally. ONNX Runtime WASM is loaded
+// from the pinned CDN URL used by @realtimex/piper-tts-web 1.1.1.
 await download(
   "https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build/piper_phonemize.wasm",
   join(dist, "vendor/piper_phonemize.wasm")

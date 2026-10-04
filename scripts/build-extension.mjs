@@ -52,7 +52,8 @@ for (const path of [
   "player/player.html",
   "player/player.css",
   "settings/settings.html",
-  "settings/settings.css"
+  "settings/settings.css",
+  "test/test.html"
 ]) {
   await copyIfExists(join(root, path), join(dist, path));
 }

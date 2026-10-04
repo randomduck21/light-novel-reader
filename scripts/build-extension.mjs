@@ -4,12 +4,11 @@ import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { execFileSync } from "node:child_process";
+import { execSync } from "node:child_process";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
 const xpi = join(root, "light-novel-reader.xpi");
-const npxCommand = process.platform === "win32" ? "npx.cmd" : "npx";
 
 async function copyIfExists(from, to) {
   try {
@@ -96,27 +95,18 @@ await download(
 
 // Validate the exact directory that will be packaged. This catches manifest/package
 // problems before an XPI is produced.
-execFileSync(npxCommand, [
-  "--yes",
-  "web-ext@10.7.0",
-  "lint",
-  "--source-dir",
-  dist
-], { stdio: "inherit", cwd: root });
+execSync(`npx --yes web-ext@10.7.0 lint --source-dir "${dist}"`, {
+  stdio: "inherit",
+  cwd: root,
+  windowsHide: true
+});
 
 // Let Mozilla's web-ext create the XPI so manifest.json is guaranteed to be
 // packaged at the archive root instead of relying on PowerShell ZIP behavior.
-execFileSync(npxCommand, [
-  "--yes",
-  "web-ext@10.7.0",
-  "build",
-  "--source-dir",
-  dist,
-  "--artifacts-dir",
-  root,
-  "--overwrite-dest",
-  "--filename",
-  "light-novel-reader.xpi"
-], { stdio: "inherit", cwd: root });
+execSync(`npx --yes web-ext@10.7.0 build --source-dir "${dist}" --artifacts-dir "${root}" --overwrite-dest --filename "light-novel-reader.xpi"`, {
+  stdio: "inherit",
+  cwd: root,
+  windowsHide: true
+});
 
 console.log("Built " + xpi);

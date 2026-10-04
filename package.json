@@ -1,13 +1,13 @@
 {
   "name": "light-novel-reader",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.3.0",
   "type": "module",
   "scripts": {
     "build": "node scripts/build-extension.mjs"
   },
   "dependencies": {
-    "@mintplex-labs/piper-tts-web": "1.0.3",
+    "@mintplex-labs/piper-tts-web": "1.0.5",
     "onnxruntime-web": "1.18.0"
   },
   "devDependencies": {

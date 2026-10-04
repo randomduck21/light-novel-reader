@@ -322,8 +322,8 @@ async function loadChapter() {
   }
 
   setError("");
-  setStatus(chunks.length + " speech chunks ready.");
-  startPlayback(0);
+  setStatus(chunks.length + " speech chunks ready. Press Play to start.");
+  pauseButton.textContent = "Play";
 }
 
 pauseButton.addEventListener("click", pauseOrResume);

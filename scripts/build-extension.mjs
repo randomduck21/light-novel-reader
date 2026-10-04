@@ -27,6 +27,20 @@ async function download(url, destination) {
   await pipeline(response.body, createWriteStream(destination));
 }
 
+const nodeFallbackShim = {
+  name: "node-fallback-shim",
+  setup(buildApi) {
+    buildApi.onResolve({ filter: /^(fs|path)$/ }, (args) => ({
+      path: args.path,
+      namespace: "node-fallback-shim"
+    }));
+    buildApi.onLoad({ filter: /.*/, namespace: "node-fallback-shim" }, () => ({
+      contents: "module.exports = {};",
+      loader: "js"
+    }));
+  }
+};
+
 await rm(dist, { recursive: true, force: true });
 await rm(join(root, "light-novel-reader.xpi"), { force: true });
 await mkdir(dist, { recursive: true });
@@ -60,7 +74,7 @@ for (const pair of [
     target: "es2022",
     sourcemap: false,
     minify: false,
-    external: pair[0] === "tts/tts-worker.js" ? ["fs", "path"] : []
+    plugins: pair[0] === "tts/tts-worker.js" ? [nodeFallbackShim] : []
   });
 }
 

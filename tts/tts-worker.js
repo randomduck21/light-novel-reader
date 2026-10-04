@@ -3,9 +3,7 @@ import { TtsSession } from "@mintplex-labs/piper-tts-web";
 let session = null;
 let activeVoice = null;
 
-const extensionUrl = (path) => browser.runtime.getURL(path);
-
-async function createSession(voiceId, postProgress) {
+async function createSession(voiceId, wasmPaths, postProgress) {
   if (session && activeVoice === voiceId) return session;
 
   session = null;
@@ -21,11 +19,7 @@ async function createSession(voiceId, postProgress) {
         total: event.total
       });
     },
-    wasmPaths: {
-      onnxWasm: extensionUrl("vendor/ort/"),
-      piperData: extensionUrl("vendor/piper_phonemize.data"),
-      piperWasm: extensionUrl("vendor/piper_phonemize.wasm")
-    }
+    wasmPaths
   });
 
   return session;
@@ -39,14 +33,18 @@ self.onmessage = async (event) => {
   const generation = message.generation;
 
   try {
-    const tts = await createSession(message.voiceId, (progress) => {
-      self.postMessage({
-        type: "PROGRESS",
-        requestId,
-        generation,
-        progress
-      });
-    });
+    const tts = await createSession(
+      message.voiceId,
+      message.wasmPaths,
+      (progress) => {
+        self.postMessage({
+          type: "PROGRESS",
+          requestId,
+          generation,
+          progress
+        });
+      }
+    );
 
     const wav = await tts.predict(message.text);
     const buffer = await wav.arrayBuffer();

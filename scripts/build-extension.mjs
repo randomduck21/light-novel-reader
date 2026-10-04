@@ -8,6 +8,7 @@ import { execFileSync } from "node:child_process";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const dist = join(root, "dist");
+const xpi = join(root, "light-novel-reader.xpi");
 
 async function copyIfExists(from, to) {
   try {
@@ -42,7 +43,7 @@ const nodeFallbackShim = {
 };
 
 await rm(dist, { recursive: true, force: true });
-await rm(join(root, "light-novel-reader.xpi"), { force: true });
+await rm(xpi, { force: true });
 await mkdir(dist, { recursive: true });
 
 for (const path of [
@@ -55,7 +56,9 @@ for (const path of [
   "settings/settings.css",
   "test/test.html"
 ]) {
-  await copyIfExists(join(root, path), join(dist, path));
+  if (!(await copyIfExists(join(root, path), join(dist, path)))) {
+    throw new Error("Missing required extension file: " + path);
+  }
 }
 
 for (const pair of [
@@ -102,12 +105,29 @@ await download(
   join(dist, "vendor/piper_phonemize.data")
 );
 
-execFileSync("powershell", [
-  "-NoProfile",
-  "-NonInteractive",
-  "-Command",
-  "Compress-Archive -Path '" + dist.replace(/'/g, "''") + "\*' -DestinationPath '" +
-    join(root, "light-novel-reader.xpi").replace(/'/g, "''") + "' -Force"
-], { stdio: "inherit" });
+// Validate the exact directory that will be packaged. This catches manifest/package
+// problems before an XPI is produced.
+execFileSync("npx", [
+  "--yes",
+  "web-ext@10.7.0",
+  "lint",
+  "--source-dir",
+  dist
+], { stdio: "inherit", cwd: root });
 
-console.log("Built " + join(root, "light-novel-reader.xpi"));
+// Let Mozilla's web-ext create the XPI so manifest.json is guaranteed to be
+// packaged at the archive root instead of relying on PowerShell ZIP behavior.
+execFileSync("npx", [
+  "--yes",
+  "web-ext@10.7.0",
+  "build",
+  "--source-dir",
+  dist,
+  "--artifacts-dir",
+  root,
+  "--overwrite-dest",
+  "--filename",
+  "light-novel-reader.xpi"
+], { stdio: "inherit", cwd: root });
+
+console.log("Built " + xpi);

@@ -1,85 +1,40 @@
 import { TtsSession } from "@realtimex/piper-tts-web";
 
-let session = null;
-let activeVoice = null;
-const TTS_CACHE_VERSION = "0.3.2";
+let session=null,activeVoice=null,queue=Promise.resolve();
+const CACHE_VERSION="0.4.0";
 
-async function resetTtsCacheOnce() {
-  const stored = await browser.storage.local.get("ttsCacheVersion");
-  if (stored.ttsCacheVersion === TTS_CACHE_VERSION) return;
-
-  try {
-    const root = await navigator.storage.getDirectory();
-    await root.removeEntry("piper", { recursive: true });
-  } catch {
-    // The cache may not exist yet or OPFS may be unavailable.
-  }
-
-  await browser.storage.local.set({ ttsCacheVersion: TTS_CACHE_VERSION });
+async function resetCacheOnce(){
+  const root=await navigator.storage.getDirectory();
+  const marker=await root.getDirectoryHandle("light-novel-reader",{create:true});
+  let version="";
+  try{const f=await marker.getFileHandle("tts-cache-version");version=await(await f.getFile()).text();}catch{}
+  if(version===CACHE_VERSION)return;
+  try{await root.removeEntry("piper",{recursive:true});}catch{}
+  const f=await marker.getFileHandle("tts-cache-version",{create:true}),w=await f.createWritable();
+  await w.write(CACHE_VERSION);await w.close();
 }
 
-async function createSession(voiceId, wasmPaths, postProgress) {
-  if (session && activeVoice === voiceId) return session;
-
-  session = null;
-  activeVoice = voiceId;
-
-  await resetTtsCacheOnce();
-
-  session = await TtsSession.create({
-    voiceId,
-    progress: (event) => {
-      postProgress({
-        stage: "download",
-        url: event.url,
-        loaded: event.loaded,
-        total: event.total
-      });
-    },
-    wasmPaths,
-    allowLocalModels: true,
-    fallbackStrategy: "cdn"
+async function makeSession(voiceId,wasmPaths,progress){
+  if(session&&activeVoice===voiceId)return session;
+  session=null;activeVoice=voiceId;
+  await resetCacheOnce();
+  session=await TtsSession.create({
+    voiceId,wasmPaths,allowLocalModels:true,fallbackStrategy:"cdn",
+    progress:e=>progress({stage:"download",url:e.url,loaded:e.loaded,total:e.total})
   });
-
   return session;
 }
 
-self.onmessage = async (event) => {
-  const message = event.data;
-  if (!message || message.type !== "SYNTHESIZE") return;
-
-  const requestId = message.requestId;
-  const generation = message.generation;
-
-  try {
-    const tts = await createSession(
-      message.voiceId,
-      message.wasmPaths,
-      (progress) => {
-        self.postMessage({
-          type: "PROGRESS",
-          requestId,
-          generation,
-          progress
-        });
-      }
-    );
-
-    const wav = await tts.predict(message.text);
-    const buffer = await wav.arrayBuffer();
-
-    self.postMessage({
-      type: "AUDIO",
-      requestId,
-      generation,
-      buffer
-    }, [buffer]);
-  } catch (error) {
-    self.postMessage({
-      type: "ERROR",
-      requestId,
-      generation,
-      error: error instanceof Error ? error.message : String(error)
-    });
+async function synthesize(m){
+  try{
+    const tts=await makeSession(m.voiceId,m.wasmPaths,p=>self.postMessage({type:"PROGRESS",requestId:m.requestId,generation:m.generation,progress:p}));
+    const wav=await tts.predict(m.text),buffer=await wav.arrayBuffer();
+    self.postMessage({type:"AUDIO",requestId:m.requestId,generation:m.generation,buffer},[buffer]);
+  }catch(e){
+    self.postMessage({type:"ERROR",requestId:m.requestId,generation:m.generation,error:e instanceof Error?e.message:String(e)});
   }
+}
+self.onmessage=e=>{
+  const m=e.data;if(m?.type!=="SYNTHESIZE")return;
+  queue=queue.then(()=>synthesize(m)).catch(()=>{});
 };

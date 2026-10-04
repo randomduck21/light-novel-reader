@@ -1,0 +1,14 @@
+# OS/editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Temporary build output
+dist/
+build/
+*.zip
+
+# Local model files
+models/
+*.onnx
+*.onnx.json

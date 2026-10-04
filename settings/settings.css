@@ -1,0 +1,6 @@
+body { margin: 0; padding: 24px; background: #141414; color: #f4f4f4; font: 14px system-ui, sans-serif; }
+main { max-width: 520px; }
+label { display: grid; gap: 6px; margin: 16px 0; }
+input { width: 100%; padding: 8px; border-radius: 7px; border: 1px solid #333; background: #202020; color: inherit; }
+button { padding: 9px 13px; border: 0; border-radius: 8px; cursor: pointer; }
+#status { margin-top: 10px; opacity: .75; }

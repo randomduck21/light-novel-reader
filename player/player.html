@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Light Novel Reader</title>
+  <link rel="stylesheet" href="player.css">
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Light Novel Reader</h1>
+      <div id="chapterTitle">Preparing...</div>
+    </div>
+    <button id="settings" title="Settings">Settings</button>
+  </header>
+
+  <section class="progress">
+    <div id="progressText">0 / 0</div>
+    <progress id="progressBar" value="0" max="1"></progress>
+  </section>
+
+  <section class="controls">
+    <button id="back">Back</button>
+    <button id="pause">Pause</button>
+    <button id="forward">Next</button>
+    <button id="stop">Stop</button>
+  </section>
+
+  <section class="settings-grid">
+    <label>
+      Voice ID
+      <input id="voice" value="en_US-lessac-medium" spellcheck="false">
+    </label>
+    <label>
+      Speed
+      <input id="speed" type="range" min="0.7" max="1.5" step="0.05" value="1">
+      <span id="speedValue">1.00x</span>
+    </label>
+    <label>
+      Pre-buffer
+      <input id="prebuffer" type="range" min="1" max="4" step="1" value="3">
+      <span id="prebufferValue">3 chunks</span>
+    </label>
+  </section>
+
+  <div id="status">Loading...</div>
+  <div id="error" role="alert"></div>
+
+  <script src="player.js" type="module"></script>
+</body>
+</html>

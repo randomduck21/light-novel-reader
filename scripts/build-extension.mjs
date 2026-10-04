@@ -4,7 +4,6 @@ import { createWriteStream } from "node:fs";
 import { pipeline } from "node:stream/promises";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { createRequire } from "node:module";
 import { execSync } from "node:child_process";
 
 const root=resolve(dirname(fileURLToPath(import.meta.url)),"..");
@@ -15,8 +14,7 @@ async function download(url,to){await mkdir(dirname(to),{recursive:true});const 
 const shim={name:"node-fallback-shim",setup(b){b.onResolve({filter:/^(fs|path)$/},a=>({path:a.path,namespace:"shim"}));b.onLoad({filter:/.*/,namespace:"shim"},()=>({contents:"module.exports={};",loader:"js"}));}};
 
 async function patchPiperCompatibility() {
-  const require = createRequire(import.meta.url);
-  const packageEntry = require.resolve("@realtimex/piper-tts-web");
+  const packageEntry = join(root,"node_modules/@realtimex/piper-tts-web/dist/piper-tts-web.js");
   let source = await readFile(packageEntry, "utf8");
 
   if (!/const phonemeIds\\s*=\\s*await new Promise/.test(source)) {

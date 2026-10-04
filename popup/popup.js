@@ -1,70 +1,28 @@
-const readPage = document.querySelector("#readPage");
-const stop = document.querySelector("#stop");
-const speed = document.querySelector("#speed");
-const speedValue = document.querySelector("#speedValue");
+const button = document.querySelector("#readPage");
+const settingsButton = document.querySelector("#settings");
 const status = document.querySelector("#status");
 
-let chunks = [];
-let index = 0;
-let running = false;
-
-function setStatus(text) {
-  status.textContent = text;
-}
-
-async function getActiveTab() {
+button.addEventListener("click", async () => {
   const tabs = await browser.tabs.query({ active: true, currentWindow: true });
-  return tabs[0];
-}
+  const sourceTab = tabs[0];
 
-async function speakNext() {
-  if (!running || index >= chunks.length) {
-    running = false;
-    setStatus(index >= chunks.length ? "Finished." : "Stopped.");
+  if (!sourceTab?.id) {
+    status.textContent = "No active tab.";
     return;
   }
 
-  const utterance = new SpeechSynthesisUtterance(chunks[index++]);
-  utterance.rate = Number(speed.value);
-  utterance.onend = speakNext;
-  utterance.onerror = () => {
-    running = false;
-    setStatus("Speech playback failed.");
-  };
+  const playerUrl = browser.runtime.getURL(
+    "player/player.html?sourceTabId=" + encodeURIComponent(sourceTab.id)
+  );
 
-  speechSynthesis.speak(utterance);
-  setStatus(`Reading ${index}/${chunks.length}`);
-}
-
-readPage.addEventListener("click", async () => {
-  speechSynthesis.cancel();
-  running = false;
-
-  try {
-    const tab = await getActiveTab();
-    const result = await browser.tabs.sendMessage(tab.id, { type: "EXTRACT_PAGE" });
-    chunks = result.chunks || [];
-    index = 0;
-
-    if (!chunks.length) {
-      setStatus("No readable chapter text found.");
-      return;
-    }
-
-    running = true;
-    await speakNext();
-  } catch (error) {
-    console.error(error);
-    setStatus("Could not read this page.");
-  }
+  await browser.tabs.create({ url: playerUrl, active: true });
+  window.close();
 });
 
-stop.addEventListener("click", () => {
-  running = false;
-  speechSynthesis.cancel();
-  setStatus("Stopped.");
-});
-
-speed.addEventListener("input", () => {
-  speedValue.textContent = `${speed.value}x`;
+settingsButton.addEventListener("click", async () => {
+  await browser.tabs.create({
+    url: browser.runtime.getURL("settings/settings.html"),
+    active: true
+  });
+  window.close();
 });

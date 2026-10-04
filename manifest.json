@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Light Novel Reader",
-  "version": "0.1.0",
-  "description": "Extracts readable chapter text from web pages and prepares it for smooth text-to-speech playback.",
+  "version": "0.2.0",
+  "description": "A smooth, local text-to-speech reader for light-novel chapters on arbitrary websites.",
   "permissions": ["storage", "activeTab", "scripting"],
   "host_permissions": ["<all_urls>"],
   "action": {
@@ -19,6 +19,9 @@
       "run_at": "document_idle"
     }
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "browser_specific_settings": {
     "gecko": {
       "id": "light-novel-reader@randomduck21"

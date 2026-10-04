@@ -23,6 +23,20 @@ jobs:
       - name: Build extension
         run: npm run build
 
+      - name: Verify XPI manifest is at archive root
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $zip = [System.IO.Compression.ZipFile]::OpenRead("$env:GITHUB_WORKSPACE\light-novel-reader.xpi")
+          try {
+            $entry = $zip.Entries | Where-Object { $_.FullName -eq "manifest.json" }
+            if (-not $entry) {
+              throw "manifest.json is not at the XPI archive root."
+            }
+          } finally {
+            $zip.Dispose()
+          }
+
       - name: Upload XPI
         uses: actions/upload-artifact@v4
         with:

@@ -232,7 +232,7 @@
       <style>
         *{box-sizing:border-box}
         #dock{width:286px;color:#f4f4f5;background:rgba(24,8,12,.96);border:1px solid rgba(239,51,64,.38);border-radius:14px;box-shadow:0 14px 45px rgba(0,0,0,.34);backdrop-filter:blur(14px);pointer-events:auto;overflow:hidden}
-        #top{display:flex;align-items:center;justify-content:space-between;padding:10px 11px;border-bottom:1px solid rgba(239,51,64,.22)}
+        #top{display:flex;align-items:center;justify-content:space-between;padding:10px 11px;border-bottom:1px solid rgba(239,51,64,.22);cursor:grab;touch-action:none}#top:active{cursor:grabbing}
         #brand{display:flex;gap:8px;align-items:center;font-size:13px;font-weight:750}
         #brandIcon{width:26px;height:26px;display:grid;place-items:center;border-radius:8px;background:rgba(239,51,64,.22)}
         .icon{border:0;background:transparent;color:inherit;width:28px;height:28px;border-radius:8px;cursor:pointer}
@@ -593,8 +593,14 @@
     if(!root||host?.contains(e.target))return;
     const node=e.target instanceof Element?e.target:null;
     if(!node||!root.contains(node))return;
+    let caret=null;
+    try{
+      if(document.caretRangeFromPoint)caret=document.caretRangeFromPoint(e.clientX,e.clientY);
+      else if(document.caretPositionFromPoint){const p=document.caretPositionFromPoint(e.clientX,e.clientY);if(p){caret=document.createRange();caret.setStart(p.offsetNode,p.offset);}}
+    }catch{}
+    if(!caret)return;
     for(let i=0;i<ranges.length;i++){
-      try{if(ranges[i].comparePoint(e.clientX,e.clientY)===0){startPlayback(i);break;}}catch{}
+      try{if(ranges[i].comparePoint(caret.startContainer,caret.startOffset)===0){startPlayback(i);break;}}catch{}
     }
   },true);
 

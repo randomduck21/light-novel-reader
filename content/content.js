@@ -9,7 +9,7 @@
     ".advertisement",".ads",".ad",".social",".share"
   ];
 
-  const DEFAULTS = { voiceId:"en_US-lessac-medium", speed:1, prebufferChunks:3 };
+  const DEFAULTS = { voiceId:"en_US-lessac-medium", speed:1, prebufferChunks:3, autoNext:true };
   const voices = globalThis.LNR_VOICES || ["en_US-lessac-medium"];
   const voiceLabel = globalThis.LNR_VOICE_LABEL || (id => id);
 
@@ -177,6 +177,7 @@
     const range=ranges[index];
     if(!range) return;
     activeIndex=index;
+    browser.storage.local.set({["position:"+location.href]:index}).catch(()=>{});
 
     if(globalThis.CSS?.highlights && globalThis.Highlight){
       CSS.highlights.set("lnr-current",new Highlight(range));
@@ -260,7 +261,7 @@
         option{padding:4px;background:#0f0f13}
         input[type=range]{width:100%;accent-color:#ef3340}
         .field{margin-top:8px}.label{display:flex;justify-content:space-between;font-size:9px;opacity:.62;margin-bottom:3px}
-        details{margin-top:8px;font-size:10px;opacity:.8}summary{cursor:pointer;padding:4px 0}
+        details{margin-top:8px;font-size:10px;opacity:.8}summary{cursor:pointer;padding:4px 0}.checkrow{display:flex;align-items:center;gap:7px;margin:6px 0;color:#f2cbd0}.checkrow input{accent-color:#ef3340}
         #mini{position:fixed;right:0;bottom:30%;border:0;border-radius:12px 0 0 12px;background:rgba(24,8,12,.97);color:#fff1f2;padding:9px 10px;box-shadow:0 10px 30px rgba(0,0,0,.3);pointer-events:auto;cursor:pointer;display:none}
         #mini.visible{display:block}
       </style>
@@ -277,7 +278,7 @@
             <select id="voiceList" size="6"></select>
           </div>
           <div class="field"><div class="label"><span>Speed</span><span id="speedText">1.0×</span></div><input id="speed" type="range" min="0.5" max="2.5" step="0.1"></div>
-          <details><summary>More</summary><div class="field"><div class="label"><span>Pre-buffer</span><span id="bufferText">3</span></div><input id="prebuffer" type="range" min="1" max="4" step="1"></div></details>
+          <details><summary>More settings</summary><label class="checkrow"><input id="autoNext" type="checkbox"> Continue to next chapter</label><div class="field"><div class="label"><span>Pre-buffer</span><span id="bufferText">3</span></div><input id="prebuffer" type="range" min="1" max="4" step="1"></div><div style="margin-top:6px;opacity:.58">Shortcuts: Space play/pause · ←/→ sentence · Esc close</div></details>
         </div>
       </div>
       <button id="mini" title="Open reader">◉</button>
@@ -300,6 +301,24 @@
     shadow.querySelector("#voiceSearch").oninput=e=>renderVoices(e.target.value);
     shadow.querySelector("#voiceList").onchange=e=>changeVoice(e.target.value);
     shadow.querySelector("#download").onclick=preloadSelected;
+    shadow.querySelector("#autoNext").onchange=e=>{settings.autoNext=e.target.checked;browser.storage.local.set({settings});};
+
+    const top=shadow.querySelector("#top");
+    let drag=null;
+    top.addEventListener("pointerdown",e=>{
+      if(e.target.closest("button")||e.button!==0)return;
+      const rect=host.getBoundingClientRect();drag={x:e.clientX,y:e.clientY,left:rect.left,top:rect.top};
+      top.setPointerCapture?.(e.pointerId);e.preventDefault();
+    });
+    top.addEventListener("pointermove",e=>{
+      if(!drag)return;
+      const left=Math.max(0,Math.min(innerWidth-host.offsetWidth,drag.left+e.clientX-drag.x));
+      const topY=Math.max(0,Math.min(innerHeight-60,drag.top+e.clientY-drag.y));
+      host.style.left=left+"px";host.style.top=topY+"px";host.style.right="auto";host.style.bottom="auto";
+    });
+    const finishDrag=()=>{if(!drag)return;drag=null;const rect=host.getBoundingClientRect();browser.storage.local.set({dockPosition:{left:Math.round(rect.left),top:Math.round(rect.top)}});};
+    top.addEventListener("pointerup",finishDrag);top.addEventListener("pointercancel",finishDrag);
+    browser.storage.local.get("dockPosition").then(({dockPosition})=>{if(dockPosition&&host){host.style.left=Math.max(0,Math.min(innerWidth-host.offsetWidth,dockPosition.left))+"px";host.style.top=Math.max(0,Math.min(innerHeight-60,dockPosition.top))+"px";host.style.right="auto";host.style.bottom="auto";}});
 
     shadow.querySelector("#speed").oninput=e=>{
       settings.speed=Number(e.target.value);
@@ -432,7 +451,9 @@
         if(!playing)return;
         finished=Math.max(finished,index+1);update();
         if(index+1>=chunks.length){
-          playing=false;paused=false;clearHighlight();status("Finished.");update();return;
+          playing=false;paused=false;clearHighlight();status("Finished.");update();
+          if(settings.autoNext) continueToNextChapter();
+          return;
         }
         if(scheduled.has(index+1)) highlight(index+1);
         else waitingHighlight=index+1;
@@ -479,6 +500,20 @@
     if(chunks.length)startPlayback(Math.max(0,Math.min(chunks.length-1,base+delta)));
   }
 
+  function findNextChapter(){
+    const links=[...document.querySelectorAll("a[href]")].filter(a=>a.href&&a.href!==location.href&&!a.closest("#lnr-host"));
+    const scored=links.map(a=>{const label=clean([a.innerText,a.getAttribute("aria-label"),a.title].filter(Boolean).join(" ")).toLowerCase();const href=a.href.toLowerCase();let score=0;if(/^(next|next chapter|next page|continue|older|older post)\b/.test(label))score+=10;if(/next[-_ ]?chapter|chapter[-_ ]?\d+.*next/.test(href))score+=4;if(/previous|prev|back|comments|login|register/.test(label))score-=12;if(a.rel?.toLowerCase().split(/\s+/).includes("next"))score+=15;return {a,score};}).filter(x=>x.score>=8).sort((a,b)=>b.score-a.score);
+    return scored[0]?.a||null;
+  }
+
+  async function continueToNextChapter(){
+    const link=findNextChapter();
+    if(!link){status("Finished. No next-chapter link found.");return;}
+    const nextUrl=link.href;
+    await browser.storage.local.set({chapterHandoff:{nextUrl,fromUrl:location.href,createdAt:Date.now()}});
+    status("Opening next chapter…");location.assign(nextUrl);
+  }
+
   function closeReader(){
     stopPlayback();
     if(globalThis.CSS?.highlights)CSS.highlights.delete("lnr-current");
@@ -494,6 +529,9 @@
     const data=extract(),indexed=buildRanges(root);
     chunks=indexed.chunks.length?indexed.chunks:data.chunks;
     ranges=indexed.ranges;
+    const saved=await browser.storage.local.get("position:"+location.href);
+    const savedIndex=Number(saved["position:"+location.href]);
+    nextSchedule=Number.isInteger(savedIndex)&&savedIndex>=0&&savedIndex<chunks.length?savedIndex:0;
     if(!chunks.length){error("No readable chapter text was found on this page.");return;}
 
     shadow.querySelector("#chapter").textContent=data.title||"Current page";
@@ -501,9 +539,11 @@
     shadow.querySelector("#speedText").textContent=Number(settings.speed).toFixed(1)+"×";
     shadow.querySelector("#prebuffer").value=settings.prebufferChunks;
     shadow.querySelector("#bufferText").textContent=String(settings.prebufferChunks);
+    shadow.querySelector("#autoNext").checked=Boolean(settings.autoNext);
     renderVoices();checkVoice();
     nextSynthesis=nextSchedule=finished=0;activeIndex=-1;waitingHighlight=-1;update();error("");
-    status(chunks.length+" sentences ready. Click Play or download the voice first.");
+    status((nextSchedule>0?"Resume at saved position · ":"")+chunks.length+" sentences ready. Click Play or download the voice first.");
+    if(window.__lnrAutoStart){window.__lnrAutoStart=false;startPlayback(0);}
   }
 
   browser.runtime.onMessage.addListener(message=>{
@@ -548,6 +588,29 @@
       update();
     }
   });
+
+  document.addEventListener("click",e=>{
+    if(!root||host?.contains(e.target))return;
+    const node=e.target instanceof Element?e.target:null;
+    if(!node||!root.contains(node))return;
+    for(let i=0;i<ranges.length;i++){
+      try{if(ranges[i].comparePoint(e.clientX,e.clientY)===0){startPlayback(i);break;}}catch{}
+    }
+  },true);
+
+  window.addEventListener("keydown",e=>{
+    if(!host||e.altKey||e.ctrlKey||e.metaKey||/INPUT|TEXTAREA|SELECT/.test(e.target?.tagName||""))return;
+    if(e.code==="Space"){e.preventDefault();toggle();}
+    else if(e.key==="ArrowLeft"){e.preventDefault();jump(-1);}
+    else if(e.key==="ArrowRight"){e.preventDefault();jump(1);}
+    else if(e.key==="Escape"){e.preventDefault();closeReader();}
+  });
+
+  browser.storage.local.get("chapterHandoff").then(({chapterHandoff})=>{
+    if(chapterHandoff?.nextUrl===location.href&&Date.now()-chapterHandoff.createdAt<30*60*1000){
+      browser.storage.local.remove("chapterHandoff");window.__lnrAutoStart=true;startReader();
+    }else if(chapterHandoff&&Date.now()-chapterHandoff.createdAt>=30*60*1000){browser.storage.local.remove("chapterHandoff");}
+  }).catch(()=>{});
 
   window.addEventListener("scroll",refreshFallback,true);
   window.addEventListener("resize",refreshFallback);

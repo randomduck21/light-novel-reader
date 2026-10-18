@@ -20,7 +20,7 @@ A Firefox WebExtension for listening to web-novel chapters with local Piper neur
 1. Download or clone this branch.
 2. Run `npm install` and `npm run build` if you need the packaged build assets.
 3. In Firefox, open `about:debugging#/runtime/this-firefox`.
-4. Click **Load Temporary Add-on…** and select the built extension's `manifest.json` (or the project manifest when using a fully built distribution).
+4. Click **Load Temporary Add-on…** and select `dist/manifest.json` after the build finishes. Do not load the raw project manifest: the build step bundles the Piper worker and adds the required WASM runtime assets.
 
 Temporary add-ons are removed when Firefox restarts. The first use of a voice requires an internet connection to download that voice model; speech synthesis itself runs locally afterward.
 

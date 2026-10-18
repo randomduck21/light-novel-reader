@@ -164,7 +164,7 @@
     for(const rect of range.getClientRects()){
       if(!rect.width||!rect.height) continue;
       const marker=document.createElement("div");
-      marker.style.cssText="position:fixed;background:rgba(248,113,113,.28);border-radius:3px;pointer-events:none;";
+      marker.style.cssText="position:fixed;background:rgba(239,51,64,.28);border-radius:3px;pointer-events:none;";
       marker.style.left=(rect.left-2)+"px";
       marker.style.top=(rect.top-1)+"px";
       marker.style.width=(rect.width+4)+"px";
@@ -230,38 +230,38 @@
     shadow.innerHTML=`
       <style>
         *{box-sizing:border-box}
-        #dock{width:286px;color:#f4f4f5;background:rgba(20,20,24,.94);border:1px solid rgba(255,255,255,.12);border-radius:14px;box-shadow:0 14px 45px rgba(0,0,0,.34);backdrop-filter:blur(14px);pointer-events:auto;overflow:hidden}
-        #top{display:flex;align-items:center;justify-content:space-between;padding:10px 11px;border-bottom:1px solid rgba(255,255,255,.07)}
+        #dock{width:286px;color:#f4f4f5;background:rgba(24,8,12,.96);border:1px solid rgba(239,51,64,.38);border-radius:14px;box-shadow:0 14px 45px rgba(0,0,0,.34);backdrop-filter:blur(14px);pointer-events:auto;overflow:hidden}
+        #top{display:flex;align-items:center;justify-content:space-between;padding:10px 11px;border-bottom:1px solid rgba(239,51,64,.22)}
         #brand{display:flex;gap:8px;align-items:center;font-size:13px;font-weight:750}
-        #brandIcon{width:26px;height:26px;display:grid;place-items:center;border-radius:8px;background:rgba(255,255,255,.1)}
+        #brandIcon{width:26px;height:26px;display:grid;place-items:center;border-radius:8px;background:rgba(239,51,64,.22)}
         .icon{border:0;background:transparent;color:inherit;width:28px;height:28px;border-radius:8px;cursor:pointer}
-        .icon:hover{background:rgba(255,255,255,.09)}
+        .icon:hover{background:rgba(239,51,64,.12)}
         #body{padding:10px}
         #chapter{font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:.6;margin-bottom:8px}
         .transport{display:flex;gap:6px}
         button{font:inherit}
-        .transport button{flex:1;border:0;border-radius:9px;padding:9px;background:rgba(255,255,255,.08);color:inherit;cursor:pointer;font-size:16px}
-        .transport #play{background:#f4f4f5;color:#111;font-weight:750;font-size:13px}
-        .transport button:hover{background:rgba(255,255,255,.14)}
-        .transport #play:hover{background:#fff}
-        .bar{height:4px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;margin-top:9px}.fill{height:100%;width:0;background:#f87171}
+        .transport button{flex:1;border:0;border-radius:9px;padding:9px;background:rgba(239,51,64,.12);color:inherit;cursor:pointer;font-size:16px}
+        .transport #play{background:#ef3340;color:#fff;font-weight:800;font-size:13px}
+        .transport button:hover{background:rgba(239,51,64,.28)}
+        .transport #play:hover{background:#ff5364}
+        .bar{height:4px;background:rgba(255,255,255,.08);border-radius:999px;overflow:hidden;margin-top:9px}.fill{height:100%;width:0;background:#ef3340}
         #status{font-size:10px;line-height:1.35;opacity:.62;min-height:15px;margin-top:6px}
         #error{display:none;background:rgba(239,68,68,.12);color:#fecaca;border-radius:8px;padding:7px;margin-top:6px;font-size:10px;line-height:1.35;white-space:pre-wrap}
         .voiceRow{display:flex;gap:6px;align-items:center;margin-top:9px}
-        #voiceButton{flex:1;text-align:left;border:1px solid rgba(255,255,255,.1);background:#111116;color:inherit;border-radius:9px;padding:8px 9px;cursor:pointer;min-width:0}
+        #voiceButton{flex:1;text-align:left;border:1px solid rgba(239,51,64,.3);background:#13090d;color:inherit;border-radius:9px;padding:8px 9px;cursor:pointer;min-width:0}
         #voiceName{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}
         #voiceMeta{display:block;margin-top:2px;font-size:9px;opacity:.5}
         #download{width:34px;height:34px;padding:0;border:0;border-radius:9px;background:rgba(255,255,255,.09);color:inherit;cursor:pointer}
-        #download:hover{background:rgba(255,255,255,.15)}
-        #voices{display:none;margin-top:7px;padding:7px;border-radius:10px;background:rgba(0,0,0,.18);border:1px solid rgba(255,255,255,.07)}
+        #download:hover{background:rgba(239,51,64,.24)}
+        #voices{display:none;margin-top:7px;padding:7px;border-radius:10px;background:rgba(0,0,0,.2);border:1px solid rgba(239,51,64,.2)}
         #voices.open{display:block}
-        input[type=search]{width:100%;padding:7px 8px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:#0f0f13;color:inherit;font:inherit;font-size:11px}
+        input[type=search]{width:100%;padding:7px 8px;border:1px solid rgba(239,51,64,.28);border-radius:8px;background:#10080b;color:inherit;font:inherit;font-size:11px}
         select{width:100%;height:116px;margin-top:6px;border:1px solid rgba(255,255,255,.1);border-radius:8px;background:#0f0f13;color:inherit;font:inherit;font-size:10px}
         option{padding:4px;background:#0f0f13}
-        input[type=range]{width:100%;accent-color:#fff}
+        input[type=range]{width:100%;accent-color:#ef3340}
         .field{margin-top:8px}.label{display:flex;justify-content:space-between;font-size:9px;opacity:.62;margin-bottom:3px}
         details{margin-top:8px;font-size:10px;opacity:.8}summary{cursor:pointer;padding:4px 0}
-        #mini{position:fixed;right:0;bottom:30%;border:0;border-radius:12px 0 0 12px;background:rgba(20,20,24,.95);color:#f4f4f5;padding:9px 10px;box-shadow:0 10px 30px rgba(0,0,0,.3);pointer-events:auto;cursor:pointer;display:none}
+        #mini{position:fixed;right:0;bottom:30%;border:0;border-radius:12px 0 0 12px;background:rgba(24,8,12,.97);color:#fff1f2;padding:9px 10px;box-shadow:0 10px 30px rgba(0,0,0,.3);pointer-events:auto;cursor:pointer;display:none}
         #mini.visible{display:block}
       </style>
       <div id="dock">

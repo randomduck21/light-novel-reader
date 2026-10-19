@@ -17,7 +17,7 @@ const shim={name:"node-fallback-shim",setup(b){b.onResolve({filter:/^(fs|path)$/
 const PIPER_COMPATIBILITY_PATCH=String.raw`
 const LNR_DEFAULT_ID_TO_PHONEME=[
   "_","^","$"," ","!","'","(",")",",","-",
-  ":",";","?","a","b","c","d","e","f","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z",
+  ".",":",";","?","a","b","c","d","e","f","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z",
   "æ","ç","ð","ø","ħ","ŋ","œ","ǀ","ǁ","ǂ","ǃ","ɐ","ɑ","ɒ","ɓ","ɔ","ɕ","ɖ","ɗ","ɘ","ə","ɚ","ɛ","ɜ","ɞ",
   "ɟ","ɠ","ɡ","ɢ","ɣ","ɤ","ɥ","ɦ","ɧ","ɨ","ɪ","ɫ","ɬ","ɭ","ɮ","ɯ","ɰ","ɱ","ɲ","ɳ","ɴ","ɵ","ɶ","ɸ","ɹ",
   "ɺ","ɻ","ɽ","ɾ","ʀ","ʁ","ʂ","ʃ","ʄ","ʈ","ʉ","ʊ","ʋ","ʌ","ʍ","ʎ","ʏ","ʐ","ʑ","ʒ","ʔ","ʕ","ʘ","ʙ","ʛ",
@@ -81,9 +81,9 @@ async function patchPiperCompatibility(){
     throw new Error("Could not locate Piper speaker ID block in "+packageEntry);
 
   if(!source.includes("LNR_DEFAULT_ID_TO_PHONEME")){
-    const marker="var _TtsSession_instances;";
-    if(!source.includes(marker))throw new Error("Could not locate Piper class insertion point.");
-    source=source.replace(marker,PIPER_COMPATIBILITY_PATCH+"\n"+marker);
+    const marker=/const phonemeIds\s*=\s*await new Promise/;
+    if(!marker.test(source))throw new Error("Could not locate Piper phoneme ID insertion point.");
+    source=source.replace(marker,PIPER_COMPATIBILITY_PATCH+"\nconst phonemeIds = await new Promise");
   }
 
   source=source.replace(

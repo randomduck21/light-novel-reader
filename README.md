@@ -1,54 +1,43 @@
 # Light Novel Reader
 
-A Firefox WebExtension aimed at turning light-novel chapters on arbitrary websites into a smooth listening experience.
+A Firefox WebExtension for listening to web-novel chapters with local Piper neural text-to-speech. This branch adds a red-themed, TTSFlow-inspired reader dock while keeping the project’s own implementation and assets.
 
-## Current stage
+## Features
 
-Version 0.2.0 has the core architecture in place:
+- In-page floating reader dock with red/dark styling, collapse/restore, close, and drag-to-reposition (position saved locally).
+- Article and chapter text extraction that attempts to skip navigation, comments, sidebars, forms, and ads.
+- Sentence-by-sentence highlighting with automatic scroll-following.
+- Click a sentence on the page to jump playback to it.
+- Play/pause/resume, previous/next sentence, stop, adjustable speed, voice selection, and voice-model download.
+- Optional automatic navigation to a detected next-chapter link when playback finishes; enabled by default and adjustable under **More settings**.
+- Saves the last sentence position per page and resumes from that position when the reader is opened again.
+- Keyboard shortcuts: **Space** play/pause, **Left/Right Arrow** previous/next sentence, **Escape** close the reader.
+- Piper neural speech runs locally in a Web Worker using WebAssembly. Voice models download on first use and are cached in browser storage.
+- Preferences and reader position are stored locally; chapter text is not uploaded to a cloud TTS service.
 
-- Generic chapter/article extraction with common page-noise removal.
-- Paragraph-aware sentence chunking with a safe maximum chunk size.
-- A persistent reader tab so playback does not depend on the popup staying open.
-- Piper TTS running inside a dedicated Web Worker.
-- Local Piper phonemizer and ONNX Runtime WASM assets included by the CI build.
-- Voice models downloaded on first use and cached by the Piper web runtime.
-- Web Audio scheduling so already-generated chunks can be queued back-to-back.
-- Pause/resume, back, next, stop, speed, voice ID, and pre-buffer controls.
-- Firefox Manifest V3 CSP configured for WebAssembly.
+## Install for temporary testing
 
-## Audio strategy
+1. Download or clone this branch.
+2. Run `npm install` and `npm run build` if you need the packaged build assets.
+3. In Firefox, open `about:debugging#/runtime/this-firefox`.
+4. Click **Load Temporary Add-on…** and select `dist/manifest.json` after the build finishes. Do not load the raw project manifest: the build step bundles the Piper worker and adds the required WASM runtime assets.
 
-The reader does not wait for each sentence before starting the next one.
+Temporary add-ons are removed when Firefox restarts. The first use of a voice requires an internet connection to download that voice model; speech synthesis itself runs locally afterward.
 
-The player keeps a small synthesis window ahead of the current position, sends upcoming chunks to Piper, decodes completed WAV data into AudioBuffers, and schedules the available buffers consecutively in Web Audio. The queue is deliberately bounded so the extension does not try to synthesize an entire chapter into memory.
+## Voice models
 
-The Piper browser runtime used here is @mintplex-labs/piper-tts-web. It supports local WASM paths and caches downloaded voice models in browser storage.
+The reader uses Piper-compatible voice IDs from `tts/voices.js`. Use the voice picker in the in-page dock and click the download arrow to cache the selected voice. The available voice and language depend on the model catalog.
 
-## First-run behavior
+## Important testing notes
 
-The packaged extension contains the TTS runtime, but voice models are fetched only when that voice is first used. That keeps the extension package reasonable and avoids bundling a huge voice model for everyone.
-
-The current default voice ID is en_US-lessac-medium.
-
-## Build
-
-Pushes to main run the GitHub Actions build.
-
-The workflow installs the JavaScript dependencies, bundles the extension, downloads the browser-compatible Piper phonemizer assets, and creates:
-
-light-novel-reader.xpi
-
-The XPI is uploaded as a workflow artifact named:
-
-light-novel-reader-xpi
+This is a development build. It has not yet been verified against every novel website. Chapter continuation relies on identifying a visible next-chapter link, so sites with JavaScript-only navigation or unusual link labels may need site-specific support. The UI and navigation changes should be tested on a few representative novel sites before being treated as release-ready.
 
 ## Project structure
 
-- manifest.json
-- background/ — extension service worker
-- content/ — webpage extraction and speech chunking
-- popup/ — quick launcher
-- player/ — persistent playback UI and audio scheduler
-- tts/ — Piper Web Worker
-- settings/ — saved defaults
-- scripts/ — CI build tooling
+- `background/` — extension worker and TTS message routing
+- `content/` — page extraction, sentence highlighting, dock UI, navigation
+- `popup/` — quick launcher
+- `player/` — persistent reader page
+- `tts/` — Piper Web Worker and voice catalog
+- `settings/` — saved defaults
+- `scripts/` — build tooling

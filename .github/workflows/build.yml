@@ -45,3 +45,10 @@ jobs:
           name: light-novel-reader-xpi
           path: light-novel-reader.xpi
           if-no-files-found: error
+
+      - name: Upload unpacked extension
+        uses: actions/upload-artifact@v4
+        with:
+          name: light-novel-reader-unpacked
+          path: dist/
+          if-no-files-found: error

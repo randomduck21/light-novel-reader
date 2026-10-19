@@ -81,9 +81,9 @@ async function patchPiperCompatibility(){
     throw new Error("Could not locate Piper speaker ID block in "+packageEntry);
 
   if(!source.includes("LNR_DEFAULT_ID_TO_PHONEME")){
-    const marker="var _TtsSession_instances;";
-    if(!source.includes(marker))throw new Error("Could not locate Piper class insertion point.");
-    source=source.replace(marker,PIPER_COMPATIBILITY_PATCH+"\n"+marker);
+    const marker=/const phonemeIds\s*=\s*await new Promise/;
+    if(!marker.test(source))throw new Error("Could not locate Piper phoneme ID insertion point.");
+    source=source.replace(marker,PIPER_COMPATIBILITY_PATCH+"\nconst phonemeIds = await new Promise");
   }
 
   source=source.replace(
